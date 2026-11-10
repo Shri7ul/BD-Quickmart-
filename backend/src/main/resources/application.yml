@@ -1,0 +1,107 @@
+spring:
+  application:
+    name: bd-quickmart-backend
+
+  # Datasource is configured entirely through environment variables so that no
+  # credentials are ever committed to the repository.
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/bd_quickmart?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Dhaka&characterEncoding=UTF-8&connectTimeout=2000&socketTimeout=10000}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
+    hikari:
+      pool-name: bd-quickmart-pool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT:5000}
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      # The backend must boot even while MySQL is stopped, so the pool does not
+      # fail fast on a missing database. /api/v1/health reports the real
+      # connectivity state instead of blocking startup.
+      initialization-fail-timeout: ${DB_POOL_INIT_FAIL_TIMEOUT:-1}
+
+  jpa:
+    # Schema ownership stays with the developer-managed MySQL instance for now.
+    # Flyway/Liquibase migrations arrive with the schema design goal.
+    hibernate:
+      ddl-auto: ${DB_DDL_AUTO:none}
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        # Pinned so the context can be built without a live MySQL connection.
+        # Hibernate would otherwise try to read dialect metadata over JDBC.
+        dialect: ${DB_DIALECT:org.hibernate.dialect.MySQLDialect}
+        # Declares the minimum supported server version. Without it Hibernate
+        # assumes MySQL 5.5.5 and logs a compatibility warning (HHH000511).
+        dialect.version: ${DB_DIALECT_VERSION:8.0.0}
+        jdbc:
+          time_zone: UTC
+    show-sql: ${DB_SHOW_SQL:false}
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+      fail-on-empty-beans: false
+    time-zone: Asia/Dhaka
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: ${SERVER_CONTEXT_PATH:/}
+  error:
+    include-message: always
+    include-binding-errors: always
+  shutdown: graceful
+
+app:
+  api:
+    version: ${APP_API_VERSION:v1}
+    base-path: ${APP_API_BASE_PATH:/api}
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+  ai:
+    # Keys are never committed. Supply them through the environment.
+    gemini-api-key: ${GEMINI_API_KEY:}
+    groq-api-key: ${GROQ_API_KEY:}
+    chat-model: ${AI_CHAT_MODEL:gemini-2.5-flash}
+    embedding-model: ${AI_EMBEDDING_MODEL:text-embedding-004}
+    enabled: ${AI_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+  info:
+    env:
+      enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    display-request-duration: true
+
+logging:
+  level:
+    root: INFO
+    com.bdquickmart: ${LOG_LEVEL_BACKEND:INFO}
+    org.hibernate.SQL: ${LOG_LEVEL_SQL:INFO}
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [trace=%X{traceId:-}] - %msg%n"
+  file:
+    name: ${LOG_FILE:logs/bd-quickmart-backend.log}
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7

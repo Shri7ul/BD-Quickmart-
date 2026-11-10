@@ -1,0 +1,2 @@
+# Keeps assets/ tracked. pubspec.yaml declares this directory as an asset root,
+# so it must exist on a fresh clone even while it holds no files yet.

@@ -7,8 +7,50 @@
 .buildlog/
 .history
 
+# =====================================================================
+# BD QuickMart
+# =====================================================================
 
+# Environment files - never commit real credentials.
+.env
+.env.*
+!.env.example
 
+# Java / Maven / Spring Boot
+backend/target/
+backend/logs/
+*.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+
+# Stray extracted/decompiled dependency archives (not project source)
+hj/
+
+# Node / Vite
+node_modules/
+admin-web/dist/
+admin-web/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local toolchain helpers
+.tooling/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =====================================================================
+# Flutter
+# =====================================================================
 # Flutter repo-specific
 /bin/cache/
 /bin/internal/bootstrap.bat
@@ -117,3 +159,6 @@ app.*.symbols
 !**/ios/**/default.perspectivev3
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 !/dev/ci/**/Gemfile.lock
+
+.puku-cli/
+.tooling/
