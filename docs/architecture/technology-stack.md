@@ -26,7 +26,7 @@ each.
 | Admin web build | Vite | 8.3.6 | Verified |
 | Admin web routing | React Router | 7.x | Verified |
 | Admin web HTTP | Axios | latest | Verified |
-| Node.js | Node | 24.18.0 | Verified |
+| Node.js | Node | 22.22.2 | Verified |
 
 ---
 

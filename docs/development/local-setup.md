@@ -16,7 +16,7 @@ Goal 01 was developed and verified with the following versions.
 | Java (Temurin) | 21.0.13 LTS | `C:\Users\USER\tools\jdk-21.0.13+9` |
 | Apache Maven | 3.9.9 | `C:\Users\USER\tools\apache-maven-3.9.9` |
 | Flutter | 3.35.1 (Dart 3.9.0) | `C:\Users\USER\tools\flutter` |
-| Node.js | 24.18.0 | system install |
+| Node.js | 22.22.2 | system install |
 | Android SDK | platforms 34 & 36, build-tools 34–36.1 | `C:\Users\USER\AppData\Local\Android\Sdk` |
 | MySQL | 8 | XAMPP (`C:\xampp`) |
 
