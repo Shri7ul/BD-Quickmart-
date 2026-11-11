@@ -147,6 +147,17 @@ response header, in the response body, and in every log line for that request.
 **Validation.** Request bodies are validated with Jakarta Bean Validation.
 Failures produce a `BDQM-0400` response listing the offending fields.
 
+**Authentication (Goal 02).** Public endpoints (`/api/v1/auth/register`,
+`/login`, `/refresh`) need no credentials; everything else requires a bearer
+JWT. Filter-level authentication and authorization failures are written as the
+same standard envelope by a JSON `AuthenticationEntryPoint` and
+`AccessDeniedHandler` — a `@RestControllerAdvice` cannot catch exceptions
+thrown inside the filter chain. Goal 02 adds `BDQM-0402` (invalid credentials),
+`BDQM-0410` (invalid token), `BDQM-0411` (expired token) and `BDQM-0412`
+(inactive account). Six roles map to literal authorities such as
+`ROLE_CUSTOMER` and `PERM_RIDER_ACTIVE`; there is no role hierarchy, so the
+least-privilege model is auditable in one `SecurityConfig` file.
+
 **Documentation.** Springdoc generates OpenAPI 3.1 from the annotated
 controllers, served at `/v3/api-docs` with a Swagger UI at `/swagger-ui.html`.
 
@@ -253,7 +264,25 @@ both Flutter applications, admin web console, database connection foundation,
 documentation, and the verification evidence recorded in
 [`docs/progress.md`](../progress.md).
 
-**Not built:** every business capability. All screens showing real data are
-placeholders that state which goal delivers them. The admin dashboard shows
-`—` rather than invented numbers, because a dashboard built on mock figures
-is worse than an empty one — it hides whether the real thing works.
+**Built and verified (Goal 02):** the `auth` and `user` modules are now filled
+in — `users` / `refresh_tokens` entities and repositories, JJWT-based access
+and refresh tokens with rotation and replay detection, BCrypt password hashing,
+stateless Spring Security with a JWT filter and JSON 401/403 handlers, six
+canonical roles with explicit authority gates, public registration limited to
+`CUSTOMER` / `RIDER`, a PENDING-rider approval workflow, privileged account
+provisioning, and an opt-in first-`SUPER_ADMIN` bootstrap. SQL migrations are
+shipped under `infrastructure/database/init/`.
+
+Both Flutter apps gained sign-in, registration, session restore, secure token
+storage, a runtime server-URL override, and role/status-aware router guards
+(the rider app adds an "awaiting approval" screen). The admin web gained a
+guarded router, an `AuthProvider` with silent single-flight refresh, and role
+guards. All four applications pass their verification commands and both
+Flutter apps produce installable debug APKs with distinct application IDs.
+
+**Not built:** every Goal 03+ business capability. All screens showing real
+catalogue/order data remain placeholders that state which goal delivers them.
+The admin dashboard shows `—` rather than invented numbers, because a
+dashboard built on mock figures is worse than an empty one — it hides whether
+the real thing works. OTP verification (listed in the original roadmap) is not
+part of the implemented Goal 02 scope.

@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../core/localization/app_localizations.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_scaffold.dart';
+import '../../auth/state/auth_controller.dart';
 
-/// Rider profile, vehicle details and language settings.
+/// Rider profile, vehicle details and language settings (Goal 02).
+///
+/// Shows the signed-in rider and wires the previously inert sign-out action
+/// to [AuthController.logout], which revokes the refresh-token family first.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+    final AppLocalizations l10n = AppLocalizations.of(context);
+    final AuthController auth = context.watch<AuthController>();
+    final user = auth.user;
 
     return AppScaffold(
       title: l10n.navProfile,
@@ -23,12 +30,19 @@ class ProfileScreen extends StatelessWidget {
                 backgroundColor: AppTheme.primaryLight,
                 child: Icon(Icons.person, color: AppTheme.primary),
               ),
-              title: const Text('Rider name'),
-              subtitle: const Text('01XXXXXXXXX'),
-              trailing: const Icon(Icons.edit_outlined),
-              onTap: () {},
+              title: Text(user?.fullName ?? 'Rider'),
+              subtitle: Text(user?.email ?? ''),
             ),
           ),
+          const SizedBox(height: AppTheme.spacing),
+          if (user != null)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.badge_outlined),
+                title: const Text('Account'),
+                subtitle: Text('${user.role} · ${user.status}'),
+              ),
+            ),
           const SizedBox(height: AppTheme.spacing * 3),
           Card(
             child: Column(
@@ -72,6 +86,12 @@ class ProfileScreen extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: AppTheme.spacing * 3),
+          OutlinedButton.icon(
+            onPressed: () => context.read<AuthController>().logout(),
+            icon: const Icon(Icons.logout),
+            label: const Text('Sign out'),
           ),
         ],
       ),

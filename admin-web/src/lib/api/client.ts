@@ -1,4 +1,9 @@
-import axios, { type AxiosError, type AxiosInstance } from 'axios';
+import axios, {
+  type AxiosError,
+  type AxiosInstance,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 
 import { appConfig } from '../config/env';
 
@@ -31,14 +36,29 @@ export class ApiError extends Error {
 }
 
 /**
+ * Silent-refresh callback. It must exchange the stored refresh token for a
+ * fresh access token and return that token, or null when the session cannot
+ * be restored. The implementation lives in the auth feature so this module
+ * stays React-free and free of circular imports.
+ */
+export type RefreshHandler = () => Promise<string | null>;
+
+type RetryableConfig = InternalAxiosRequestConfig & { __retried?: boolean };
+
+/**
  * Centralized HTTP client for the BD QuickMart backend.
  *
  * Unwraps the standard `ApiResponse` envelope so callers receive the payload
- * directly, and converts transport failures into `ApiError`.
+ * directly, converts transport failures into `ApiError`, and on a 401 performs
+ * a single-flight silent refresh followed by exactly one retry. Concurrent
+ * 401s share the same refresh promise instead of racing each other.
  */
 export class ApiClient {
   private readonly http: AxiosInstance;
   private token: string | null = null;
+  private refreshHandler: RefreshHandler | null = null;
+  private onAuthFailure: (() => void) | null = null;
+  private refreshPromise: Promise<string | null> | null = null;
 
   constructor() {
     this.http = axios.create({
@@ -58,14 +78,7 @@ export class ApiClient {
 
     this.http.interceptors.response.use(
       (response) => response,
-      (error: AxiosError<ApiResponse<unknown>>) => {
-        const body = error.response?.data;
-        throw new ApiError(
-          body?.message ?? error.message ?? 'Request failed',
-          error.response?.status,
-          body?.code,
-        );
-      },
+      (error: AxiosError<ApiResponse<unknown>>) => this.handleError(error),
     );
   }
 
@@ -77,6 +90,60 @@ export class ApiClient {
   /** Clears any attached credentials. */
   clearAuthToken(): void {
     this.token = null;
+  }
+
+  /** Registers the silent-refresh handler (React-free callback). */
+  setRefreshHandler(handler: RefreshHandler | null): void {
+    this.refreshHandler = handler;
+  }
+
+  /** Registers a callback invoked when the session cannot be restored. */
+  setOnAuthFailure(handler: (() => void) | null): void {
+    this.onAuthFailure = handler;
+  }
+
+  private async handleError(
+    error: AxiosError<ApiResponse<unknown>>,
+  ): Promise<AxiosResponse> {
+    const config = error.config as RetryableConfig | undefined;
+
+    if (
+      error.response?.status === 401
+      && config
+      && !config.__retried
+      && this.refreshHandler
+    ) {
+      config.__retried = true;
+      const newToken = await this.runSingleFlightRefresh();
+      if (newToken) {
+        config.headers.Authorization = `Bearer ${newToken}`;
+        return this.http.request(config);
+      }
+      this.token = null;
+      this.onAuthFailure?.();
+    }
+
+    const body = error.response?.data;
+    throw new ApiError(
+      body?.message ?? error.message ?? 'Request failed',
+      error.response?.status,
+      body?.code,
+    );
+  }
+
+  private runSingleFlightRefresh(): Promise<string | null> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = (async () => {
+        const token = this.refreshHandler ? await this.refreshHandler() : null;
+        if (token) {
+          this.token = token;
+        }
+        return token;
+      })().finally(() => {
+        this.refreshPromise = null;
+      });
+    }
+    return this.refreshPromise;
   }
 
   async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {

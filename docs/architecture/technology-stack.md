@@ -17,15 +17,22 @@ each.
 | Database | MySQL | 8 (XAMPP) | **Pending developer setup** |
 | API documentation | Springdoc OpenAPI (WebMVC UI) | 2.8.13 | Verified |
 | Security | Spring Security | Managed by Spring Boot 3.5.6 | Verified |
+| JWT library | JJWT (api / impl / jackson) | 0.12.6 | Verified (Goal 02) |
+| Test database | H2 (test scope, MySQL mode) | Spring Boot managed (2.3.232) | Verified (Goal 02) |
 | Real-time | Spring WebSocket | Managed by Spring Boot 3.5.6 | Verified |
 | Customer app | Flutter | 3.35.1 | Verified |
 | Rider app | Flutter | 3.35.1 | Verified |
 | Dart SDK | (bundled with Flutter) | 3.9.0 | Verified |
+| Flutter state management | provider | ^6.1.5 | Verified (Goal 02) |
+| Flutter secure storage | flutter_secure_storage | ^9.2.2 | Verified (Goal 02) |
+| Flutter settings storage | shared_preferences | ^2.5.5 | Verified (Goal 02) |
+| Flutter HTTP | Dio | ^5.7.0 | Verified |
+| Flutter routing | go_router | ^14.6.2 (14.8.1 resolved) | Verified |
 | Admin web | React | 19.3.1 | Verified |
 | Admin web language | TypeScript | ~7.0.2 | Verified |
 | Admin web build | Vite | 8.3.6 | Verified |
-| Admin web routing | React Router | 7.x | Verified |
-| Admin web HTTP | Axios | latest | Verified |
+| Admin web routing | React Router DOM | ^7.18.5 | Verified |
+| Admin web HTTP | Axios | ^1.21.0 | Verified |
 | Node.js | Node | 22.22.2 | Verified |
 
 ---
@@ -69,10 +76,21 @@ through `/api/v1/health` instead of crashing.
 ### Spring Security
 
 Present from the start so that the security posture is deliberate rather than
-retrofit. The current configuration is a stateless, CSRF-free baseline that
-permits the public infrastructure endpoints (health, OpenAPI, Swagger UI) and
-requires authentication for everything else. JWT issuance and role-based
-authorization arrive in Goal 02.
+retrofit. Goal 01 shipped a stateless, CSRF-free baseline; **Goal 02 completed
+the chain**: `SessionCreationPolicy.STATELESS`, a `JwtAuthenticationFilter`
+that validates HS256 bearer tokens and rebuilds authorities from the database
+on every request, JSON-writing `AuthenticationEntryPoint` / `AccessDeniedHandler`
+for filter-level 401/403 responses, and literal authority gates. A single
+`CorsConfigurationSource` bean registered for `/**` ensures CORS headers are
+present even on filter-level errors (MVC `addCorsMappings` could not do this).
+There is no `RoleHierarchy` and no `@PreAuthorize`: every gate is an explicit
+authority, so least privilege is visible in one file.
+
+JWTs are issued/parsed with JJWT 0.12.6 against a `SecretKey` bean built from
+`JWT_SECRET` (Base64 or raw, ≥32 bytes). There is no hardcoded secret; a blank
+one fails fast outside `dev`/`test`. An injectable `java.time.Clock` makes JWT
+timestamps and JPA audit times deterministic in tests. Refresh tokens are
+stored only as SHA-256 hashes and rotated with family-based replay detection.
 
 ### Springdoc OpenAPI
 
@@ -111,11 +129,23 @@ Chosen for rendering consistency across a fragmented Android device base
 common in Bangladesh, and for a single Dart codebase covering both Android and
 iOS from one codebase.
 
-### Riverpod for state management
+### provider + ChangeNotifier for state management (Goal 02)
 
-Chosen over Provider because its providers are compile-time safe, testable
-without a widget tree, and compose naturally. Over Bloc because Goal 01 has no
+Goal 01 documented Riverpod as an intended choice but shipped no state
+management dependency at all. Goal 02 implemented the session with `provider`
+(`^6.1.5`) and a `ChangeNotifier`-based `AuthController`. This keeps the
+dependency surface small and lets the same notifier double as go_router's
+`refreshListenable`, so a single redirect re-evaluates on every session
+change. The correction is intentional: the documentation now matches the
+code rather than the earlier plan. Over Bloc because the auth flow has no
 event-stream complexity to justify the extra indirection.
+
+Tokens are persisted separately: `flutter_secure_storage` (`^9.2.2`, Android
+Keystore / iOS Keychain) for the raw token pair, and `shared_preferences`
+(`^2.5.5`) only for the non-sensitive runtime server-URL override. Both are
+behind interfaces so tests swap in in-memory implementations without touching
+platform channels. `flutter_secure_storage` is pinned to the Java-11-compatible
+9.x line because both apps' Android Gradle configs target JVM 11.
 
 ### go_router for navigation
 
@@ -179,6 +209,22 @@ fetching real data.
 Chosen for interceptors, matching the backend client's interceptor-based
 design so that auth headers and envelope unwrapping are handled identically on
 both sides.
+
+### Admin session handling (Goal 02)
+
+The access token is memory-only; the refresh token lives in `sessionStorage`.
+A single-flight 401 refresh queue shares one refresh future across concurrent
+requests and retries each failed request exactly once. Unauthenticated auth
+calls use a bare Axios instance with no interceptors so a 401 from
+`/auth/login` or `/auth/refresh` cannot trigger a refresh loop. Route guards
+(`RequireAuth`, `RequireRole`) gate the console by role.
+
+This is **not** HttpOnly-cookie protection: a token in `sessionStorage` is
+readable by any script on the page and is therefore XSS-exposed. The trade-off
+is documented in `admin-web/src/features/auth/session.ts`; a cookie-based
+session is deferred to a later hardening goal. TypeScript stays strict
+(`verbatimModuleSyntax`, `erasableSyntaxOnly`, `noUnusedLocals`), using
+`import type` and no enums or path aliases.
 
 ---
 

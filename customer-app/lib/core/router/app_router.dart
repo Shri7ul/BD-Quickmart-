@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/pending_screen.dart';
+import '../../features/auth/presentation/register_screen.dart';
+import '../../features/auth/presentation/splash_screen.dart';
+import '../../features/auth/state/auth_controller.dart';
 import '../../features/cart/presentation/cart_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/orders/presentation/orders_screen.dart';
@@ -14,74 +18,84 @@ class AppRoutes {
 
   static const String splash = '/';
   static const String login = '/login';
+  static const String register = '/register';
+  static const String pending = '/pending';
   static const String home = '/home';
-  static const String products = '/products';
-  static const String cart = '/cart';
-  static const String orders = '/orders';
-  static const String profile = '/profile';
+  static const String products = '/home/products';
+  static const String cart = '/home/cart';
+  static const String orders = '/home/orders';
+  static const String profile = '/home/profile';
 }
 
-/// Routing configuration for the customer application.
+/// Builds the router bound to [auth] (Goal 02).
 ///
-/// Route names are stable identifiers so that navigation intent is expressed
-/// rather than raw paths scattered through the widget tree.
-class AppRouter {
-  AppRouter._();
-
-  static const String splashRoute = 'splash';
-  static const String loginRoute = 'login';
-  static const String homeRoute = 'home';
-  static const String productsRoute = 'products';
-  static const String cartRoute = 'cart';
-  static const String ordersRoute = 'orders';
-  static const String profileRoute = 'profile';
-
-  static final GoRouter router = GoRouter(
+/// [AuthController] is a ChangeNotifier, so `refreshListenable` re-evaluates
+/// the top-level redirect whenever the session changes. That single redirect
+/// enforces: signed-out -> /login, pending -> /pending, signed-in -> /home,
+/// and keeps the public auth pages reachable only in the matching state.
+GoRouter createAppRouter(AuthController auth) {
+  return GoRouter(
     initialLocation: AppRoutes.splash,
+    refreshListenable: auth,
+    redirect: (BuildContext _, GoRouterState state) {
+      final String location = state.matchedLocation;
+      final bool onSplash = location == AppRoutes.splash;
+      final bool onAuthPage =
+          location == AppRoutes.login || location == AppRoutes.register;
+      final bool onPending = location == AppRoutes.pending;
+
+      return switch (auth.status) {
+        AuthStatus.unknown => onSplash ? null : AppRoutes.splash,
+        AuthStatus.unauthenticated => onAuthPage ? null : AppRoutes.login,
+        AuthStatus.pending => onPending ? null : AppRoutes.pending,
+        AuthStatus.authenticated => (onSplash || onAuthPage || onPending)
+            ? AppRoutes.home
+            : null,
+      };
+    },
     routes: [
       GoRoute(
         path: AppRoutes.splash,
-        name: splashRoute,
-        builder: (context, state) => const LoginScreen(),
+        builder: (_, __) => const SplashScreen(),
       ),
       GoRoute(
         path: AppRoutes.login,
-        name: loginRoute,
-        builder: (context, state) => const LoginScreen(),
+        builder: (_, __) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.register,
+        builder: (_, __) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.pending,
+        builder: (_, __) => const PendingScreen(),
       ),
       GoRoute(
         path: AppRoutes.home,
-        name: homeRoute,
-        builder: (context, state) => const HomeScreen(),
+        builder: (_, __) => const HomeScreen(),
         routes: [
           GoRoute(
             path: 'products',
-            name: productsRoute,
-            builder: (context, state) => const ProductsScreen(),
+            builder: (_, __) => const ProductsScreen(),
           ),
           GoRoute(
             path: 'cart',
-            name: cartRoute,
-            builder: (context, state) => const CartScreen(),
+            builder: (_, __) => const CartScreen(),
           ),
           GoRoute(
             path: 'orders',
-            name: ordersRoute,
-            builder: (context, state) => const OrdersScreen(),
+            builder: (_, __) => const OrdersScreen(),
           ),
           GoRoute(
             path: 'profile',
-            name: profileRoute,
-            builder: (context, state) => const ProfileScreen(),
+            builder: (_, __) => const ProfileScreen(),
           ),
         ],
       ),
     ],
-    errorBuilder: (context, state) => Scaffold(
+    errorBuilder: (BuildContext _, GoRouterState state) => Scaffold(
       appBar: AppBar(title: const Text('BD QuickMart')),
-      body: Center(
-        child: Text('Route not found: ${state.uri}'),
-      ),
+      body: Center(child: Text('Route not found: ${state.uri}')),
     ),
   );
 }

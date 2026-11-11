@@ -1,19 +1,32 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 
 import { AdminLayout } from '../components/layout/AdminLayout';
+import { LoginPage } from '../features/auth/LoginPage';
+import { RequireAuth } from '../features/auth/RequireAuth';
+import { RequireRole } from '../features/auth/RequireRole';
+import { UnauthorizedPage } from '../features/auth/UnauthorizedPage';
+import { RIDER_APPROVER_ROLES } from '../features/auth/roles';
 import { DashboardPage } from '../pages/DashboardPage';
 import { FeaturePage } from '../pages/FeaturePage';
 
 /**
- * Route table for the admin application.
+ * Route table for the admin application (Goal 02).
  *
- * Every feature route is registered up front so that navigation is stable and
- * each area can be filled in independently as its goal is delivered.
+ * `/login` and `/unauthorized` are public. Everything else sits behind
+ * RequireAuth. The riders area additionally demonstrates a role gate:
+ * only ADMIN / SUPER_ADMIN (who hold PERM_APPROVE_RIDERS on the backend) may
+ * open it; other privileged roles are redirected to /unauthorized.
  */
 export const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+  { path: '/unauthorized', element: <UnauthorizedPage /> },
   {
     path: '/',
-    element: <AdminLayout />,
+    element: (
+      <RequireAuth>
+        <AdminLayout />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <DashboardPage /> },
       {
@@ -49,11 +62,13 @@ export const router = createBrowserRouter([
       {
         path: 'riders',
         element: (
-          <FeaturePage
-            title="Riders"
-            description="Rider availability, workload and assignment."
-            goal="Goal 07 - Smart Rider Assignment"
-          />
+          <RequireRole allowedRoles={RIDER_APPROVER_ROLES}>
+            <FeaturePage
+              title="Riders"
+              description="Rider availability, workload and assignment."
+              goal="Goal 07 - Smart Rider Assignment"
+            />
+          </RequireRole>
         ),
       },
       {
@@ -68,4 +83,5 @@ export const router = createBrowserRouter([
       },
     ],
   },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]);

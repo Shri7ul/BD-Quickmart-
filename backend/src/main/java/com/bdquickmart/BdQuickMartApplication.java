@@ -3,6 +3,7 @@ package com.bdquickmart;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
 /**
  * Main entry point for the BD QuickMart backend.
@@ -13,6 +14,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan
+@EnableJpaAuditing(dateTimeProviderRef = "auditingDateTimeProvider")
 public class BdQuickMartApplication {
 
     public static void main(String[] args) {

@@ -13,9 +13,13 @@ public enum ApiCode {
     // 4xx - client errors
     VALIDATION_ERROR("BDQM-0400", "Request validation failed"),
     UNAUTHORIZED("BDQM-0401", "Authentication is required"),
+    INVALID_CREDENTIALS("BDQM-0402", "Invalid credentials"),
     FORBIDDEN("BDQM-0403", "Access is denied"),
     NOT_FOUND("BDQM-0404", "Resource not found"),
     CONFLICT("BDQM-0409", "Resource conflict"),
+    TOKEN_INVALID("BDQM-0410", "Token is invalid"),
+    TOKEN_EXPIRED("BDQM-0411", "Token has expired"),
+    ACCOUNT_DISABLED("BDQM-0412", "Account is not active"),
     UNPROCESSABLE_ENTITY("BDQM-0422", "Request could not be processed"),
 
     // 5xx - server errors

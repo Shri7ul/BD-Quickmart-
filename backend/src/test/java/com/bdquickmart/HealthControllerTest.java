@@ -4,26 +4,26 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Verifies the health endpoint is reachable and returns the standard response
- * envelope. The datasource is excluded from auto-configuration so that the
- * test does not require a running MySQL instance.
+ * envelope.
+ *
+ * <p>Goal 02 note: this test used to exclude DataSource/JPA auto-configuration.
+ * Once JPA repositories exist that breaks the application context, so it now
+ * uses the H2-backed {@code test} profile like every other integration test.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@TestPropertySource(properties = {
-        "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration"
-})
+@ActiveProfiles("test")
 class HealthControllerTest {
 
     @Autowired
@@ -41,16 +41,14 @@ class HealthControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/health responds promptly even without a database")
-    void healthEndpointRespondsQuicklyWithoutDatabase() throws Exception {
+    @DisplayName("GET /api/v1/health responds promptly")
+    void healthEndpointRespondsQuickly() throws Exception {
         long start = System.currentTimeMillis();
 
         mockMvc.perform(get("/api/v1/health")).andExpect(status().isOk());
 
         long elapsed = System.currentTimeMillis() - start;
-        // The probe is bounded at ~2.5s; without the bound it would wait for
-        // the full Hikari connection timeout (30s) on every call.
-        org.junit.jupiter.api.Assertions.assertTrue(elapsed < 10_000,
+        Assertions.assertTrue(elapsed < 10_000,
                 "Health endpoint took " + elapsed + "ms; it must not block on the database");
     }
 }

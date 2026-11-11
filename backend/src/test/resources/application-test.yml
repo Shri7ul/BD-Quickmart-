@@ -1,0 +1,29 @@
+# Test profile: an isolated in-memory H2 database in MySQL compatibility mode.
+# This file is test-scope only; production uses application.yml + MySQL.
+spring:
+  datasource:
+    url: jdbc:h2:mem:bdqm;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        # Main config pins MySQLDialect so tests must override it explicitly.
+        dialect: org.hibernate.dialect.H2Dialect
+        dialect.version: ""
+
+# No JWT secret is committed. The test profile is allowed an ephemeral key
+# by JwtConfig, so `mvn verify` needs no environment variables at all.
+app:
+  jwt:
+    secret: ""
+    issuer: bd-quickmart-backend
+    access-expiration: 900
+    refresh-expiration: 604800
+    allow-ephemeral-dev-key: false
+  bootstrap:
+    admin:
+      enabled: false

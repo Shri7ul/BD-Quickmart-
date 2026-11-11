@@ -58,6 +58,35 @@ properties.
 With `AI_ENABLED=false` and blank keys, the platform runs fully and no AI
 feature attempts a network call.
 
+### Authentication / JWT (Goal 02)
+
+| Variable | Default | Description |
+|---|---|---|
+| `JWT_SECRET` | *(blank)* | HS256 signing secret, Base64-encoded or a raw passphrase of **at least 32 bytes**. Generate with `openssl rand -base64 48`. A blank value makes the backend fail fast outside `dev`/`test`. Never commit a real secret. |
+| `JWT_ISSUER` | `bd-quickmart-backend` | `iss` claim, validated on parse. |
+| `JWT_ACCESS_EXPIRATION` | `900` | Access-token lifetime in seconds (15 min). |
+| `JWT_REFRESH_EXPIRATION` | `604800` | Refresh-token lifetime in seconds (7 days). |
+| `JWT_ALLOW_EPHEMERAL_DEV_KEY` | `false` | Emergency local-dev escape hatch. Generates an ephemeral key when `JWT_SECRET` is blank; **all tokens invalidate on restart**. Never enable in production. |
+
+### First-administrator bootstrap (Goal 02)
+
+There is no public admin registration. This opt-in runner creates the first
+`SUPER_ADMIN` on startup and is **disabled by default**.
+
+| Variable | Default | Description |
+|---|---|---|
+| `APP_BOOTSTRAP_ADMIN_ENABLED` | `false` | Set `true` for exactly one startup, then disable again. Env vars are visible through `ps`. |
+| `APP_BOOTSTRAP_ADMIN_EMAIL` | *(blank)* | Required when enabled. |
+| `APP_BOOTSTRAP_ADMIN_PASSWORD` | *(blank)* | Required when enabled. Hashed with BCrypt immediately; never logged. |
+| `APP_BOOTSTRAP_ADMIN_FULL_NAME` | *(blank)* | Required when enabled. |
+| `APP_BOOTSTRAP_ADMIN_PHONE` | *(blank)* | Required when enabled. |
+
+The runner skips creation when any `SUPER_ADMIN` already exists. A manual
+alternative is documented in
+`infrastructure/database/init/04_admin_bootstrap_TEMPLATE.sql` (a template with
+a commented `INSERT` and a `<BCRYPT_HASH>` placeholder — intentionally not
+runnable as-is).
+
 ---
 
 ## 2. Customer app (`customer-app/`)

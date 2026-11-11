@@ -69,6 +69,27 @@ app:
     chat-model: ${AI_CHAT_MODEL:gemini-2.5-flash}
     embedding-model: ${AI_EMBEDDING_MODEL:text-embedding-004}
     enabled: ${AI_ENABLED:false}
+  jwt:
+    # HS256 signing secret. Supply a Base64-encoded (or raw) value of at least
+    # 32 bytes through the environment. No secret is ever committed. When left
+    # blank the application refuses to start outside test/dev profiles.
+    secret: ${JWT_SECRET:}
+    issuer: ${JWT_ISSUER:bd-quickmart-backend}
+    # Access / refresh lifetimes, in seconds.
+    access-expiration: ${JWT_ACCESS_EXPIRATION:900}
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800}
+    # Emergency local-development escape hatch. Never enable in production:
+    # the generated key is ephemeral and invalidates every token on restart.
+    allow-ephemeral-dev-key: ${JWT_ALLOW_EPHEMERAL_DEV_KEY:false}
+  bootstrap:
+    admin:
+      # Opt-in first-SUPER_ADMIN provisioning. Disabled by default; all fields
+      # are required when enabled. Disable again immediately after first use.
+      enabled: ${APP_BOOTSTRAP_ADMIN_ENABLED:false}
+      email: ${APP_BOOTSTRAP_ADMIN_EMAIL:}
+      password: ${APP_BOOTSTRAP_ADMIN_PASSWORD:}
+      full-name: ${APP_BOOTSTRAP_ADMIN_FULL_NAME:}
+      phone: ${APP_BOOTSTRAP_ADMIN_PHONE:}
 
 management:
   endpoints:

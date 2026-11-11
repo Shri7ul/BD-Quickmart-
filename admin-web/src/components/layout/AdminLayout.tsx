@@ -1,5 +1,7 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
+import { useAuth } from '../../features/auth/auth-context';
 import { appConfig } from '../../lib/config/env';
 
 interface NavItem {
@@ -20,8 +22,25 @@ const navItems: NavItem[] = [
 /**
  * Primary application shell: fixed sidebar navigation plus the routed content
  * area. The layout collapses to a stacked arrangement on narrow viewports.
+ *
+ * Goal 02 wires the previously inert "Sign out" button to AuthContext.logout
+ * (which calls POST /auth/logout first) and shows the signed-in operator.
  */
 export function AdminLayout() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function handleSignOut(): Promise<void> {
+    setSigningOut(true);
+    try {
+      await logout();
+    } finally {
+      navigate('/login', { replace: true });
+      setSigningOut(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
@@ -53,8 +72,19 @@ export function AdminLayout() {
         <header className="app-topbar">
           <h1 className="app-topbar__title">{appConfig.appName}</h1>
           <div className="app-topbar__actions">
-            <button type="button" className="app-button app-button--ghost">
-              Sign out
+            {user ? (
+              <div className="app-topbar__user">
+                <span className="app-topbar__user-name">{user.fullName}</span>
+                <span className="app-topbar__user-role">{user.role}</span>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="app-button app-button--ghost"
+              onClick={handleSignOut}
+              disabled={signingOut}
+            >
+              {signingOut ? 'Signing out…' : 'Sign out'}
             </button>
           </div>
         </header>

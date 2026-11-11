@@ -15,6 +15,13 @@ dependencies:
   # Routing
   go_router: ^14.6.2
 
+  # State management
+  provider: ^6.1.5
+
+  # Persistence: secure token store + lightweight settings
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.5.5
+
   # Networking
   dio: ^5.7.0
 

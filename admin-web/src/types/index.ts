@@ -6,18 +6,44 @@
  * corresponding modules are implemented.
  */
 
-/** Roles defined by the backend auth module (Goal 02). */
+/**
+ * The six canonical roles defined by the backend auth module (Goal 02).
+ * Identifiers are shared verbatim with the database, JWT claims and apps.
+ */
 export type UserRole =
+  | 'CUSTOMER'
+  | 'RIDER'
+  | 'ADMIN'
   | 'SUPER_ADMIN'
   | 'STORE_MANAGER'
   | 'INVENTORY_OPERATOR';
 
-/** Authenticated operator profile. */
+/** Account lifecycle state (Goal 02). */
+export type AccountStatus = 'ACTIVE' | 'PENDING' | 'REJECTED' | 'DISABLED';
+
+/** Authenticated operator profile, mirroring the backend UserResponse. */
 export interface AuthenticatedUser {
-  id: string;
+  publicId: string;
   fullName: string;
   email: string;
+  phone: string;
   role: UserRole;
+  status: AccountStatus;
+}
+
+/** Login accepts either an email address or a phone number. */
+export interface LoginRequest {
+  identifier: string;
+  password: string;
+}
+
+/** Token pair returned by POST /auth/login and POST /auth/refresh. */
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: string;
+  expiresInSeconds: number;
+  user: AuthenticatedUser;
 }
 
 /** Order lifecycle status. */
