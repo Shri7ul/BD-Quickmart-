@@ -717,3 +717,131 @@ receive this work.
 | 2026-11-10 | Final acceptance audit: re-reviewed every file; fixed duplicate `BDQM-0401` code, anchored Flutter `assets/` roots with `.gitkeep`, corrected rider dependency / Node version docs, ignored stray `hj/` artifacts |
 | 2026-11-10 | Re-ran full verification (`mvn -B clean verify`, both `flutter analyze`/`flutter test`, `npm run lint`/`npm run build`) plus all endpoint checks — all passed |
 | 2026-11-10 | Committed Goal 01 foundation as `19f64cc` (`feat: complete BD QuickMart goal 01 foundation`); status set to `ACCEPTED` |
+
+---
+
+## Goal 02 — Authentication & Role Management
+
+| Field | Value |
+|---|---|
+| **Goal number** | 02 |
+| **Goal name** | Authentication & Role Management |
+| **Status** | `READY_FOR_REVIEW` |
+| **Started** | 2026-11-10 |
+| **Completed** | 2026-11-11 |
+| **Next permitted goal** | Goal 03 — must not begin until Goal 02 is accepted |
+
+> Status is `READY_FOR_REVIEW`, **not** `ACCEPTED`. All four applications build
+> and every automated test passes, but acceptance is gated on manual steps the
+> agent must not perform: importing the SQL migrations into live MySQL, setting
+> `JWT_SECRET`, bootstrapping the first administrator, and exercising the flows
+> on a real device/emulator. The Goal 02 brief explicitly forbids marking a
+> goal `ACCEPTED` merely because code compiles.
+
+---
+
+### Scope delivered
+
+| Application | Delivered |
+|---|---|
+| **Backend** (Java 21 / Spring Boot 3.5.6) | `users` / `refresh_tokens` entities + repositories; JJWT HS256 access & refresh tokens (0.12.6); refresh-token rotation with SHA-256 hash storage, token families, `PESSIMISTIC_WRITE` locking and replay detection that revokes the whole family; stateless Spring Security (CSRF off, `STATELESS`, BCrypt); JSON-writing `AuthenticationEntryPoint` / `AccessDeniedHandler` for filter-level 401/403; a single `CorsConfigurationSource`; six canonical roles with least-privilege literal authorities (`ROLE_*`, `PERM_RIDER_ACTIVE`, `PERM_APPROVE_RIDERS`, `PERM_PROVISION_PRIVILEGED`); public registration limited to `CUSTOMER`/`RIDER`; new riders start `PENDING`; rider approve/reject workflow; privileged provisioning; opt-in first-`SUPER_ADMIN` bootstrap; `02`/`03`/`04` SQL scripts; `application-test.yml` + H2 integration suite + real-HTTP smoke test. |
+| **Admin web** (React 19 / TS / Vite) | Login page, `AuthProvider`, `RequireAuth`, `RequireRole`, `UnauthorizedPage`, guarded `createBrowserRouter`; memory-only access token, refresh token in `sessionStorage`; single-flight 401 refresh queue with one retry; normalized auth errors; six roles + `AccountStatus` types. |
+| **Customer app** (Flutter) | Sign-in / register / pending / splash screens; `provider` + `ChangeNotifier` `AuthController`; `flutter_secure_storage` token store + `shared_preferences` settings; `Dio` `QueuedInterceptorsWrapper` single-flight refresh; runtime server-URL override; `go_router` `refreshListenable` + top-level role/status redirect; profile sign-out; debug APK with `INTERNET` + cleartext. |
+| **Rider app** (Flutter) | Same generic auth layer parameterized with `allowedRole: 'RIDER'`, `pendingAllowed: true`; pending-approval gate; rider-specific UI/router; distinct `com.bdquickmart.rider_app` debug APK. |
+
+### Verification evidence
+
+**Environment:** Windows 11 Pro · Temurin JDK 21.0.13 LTS · Maven 3.9.9 ·
+Flutter 3.35.1 (Dart 3.9.0) · Node 22.22.2 · Android SDK build-tools 36.1.0.
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `cd backend && mvn -B clean verify` | `BUILD SUCCESS` — `Tests run: 27, Failures: 0, Errors: 0, Skipped: 0` |
+| 2 | `cd admin-web && npm run lint` | `Found 0 warnings and 0 errors.` |
+| 3 | `cd admin-web && npm run build` | `✓ 98 modules transformed` — `✓ built in 1.13s` |
+| 4 | `cd customer-app && flutter analyze` | `No issues found!` |
+| 5 | `cd customer-app && flutter test` | `+14: All tests passed!` |
+| 6 | `cd customer-app && flutter build apk --debug` | `app-debug.apk` built (159M) |
+| 7 | `cd rider-app && flutter analyze` | `No issues found!` |
+| 8 | `cd rider-app && flutter test` | `+16: All tests passed!` |
+| 9 | `cd rider-app && flutter build apk --debug` | `app-debug.apk` built (161M) |
+| 10 | `aapt dump badging` on both APKs | distinct application IDs, minSdk 24, targetSdk 36, `INTERNET`, debug cleartext |
+| 11 | `git diff --check` / `git diff --cached --check` | clean |
+
+**Total automated tests: 57** (backend 27 + customer 14 + rider 16). All pass.
+Admin web has no test runner configured; it is verified via lint + production
+build.
+
+#### Installable debug APKs
+
+| App | Path | Size | Application ID |
+|---|---|---|---|
+| Customer | `customer-app/build/app/outputs/flutter-apk/app-debug.apk` | 159M | `com.bdquickmart.customer_app` |
+| Rider | `rider-app/build/app/outputs/flutter-apk/app-debug.apk` | 161M | `com.bdquickmart.rider_app` |
+
+Both are `versionName 0.1.0`, minSdk 24 / targetSdk 36, declare
+`android.permission.INTERNET`, and enable cleartext only in debug/profile
+manifests. Both APKs are git-ignored and were **not** committed.
+
+### Commit record
+
+| Field | Value |
+|---|---|
+| Implementation commit | `3ca41caafb01ae5a71968a522a94e52a09281c92` (`3ca41ca`) |
+| Commit message | `feat: complete BD QuickMart goal 02 authentication & role management` |
+| Staged diff | 126 files changed, 7929 insertions(+), 522 deletions(-) |
+| Branch | `main` |
+| Remote | `https://github.com/Shri7ul/BD-Quickmart-.git` — **not pushed** |
+| Documentation commit | This file — a separate, non-amending follow-up commit |
+
+The implementation commit intentionally excluded `docs/progress.md` so that
+`3ca41ca` could be recorded here; this document is committed afterwards as a
+second commit. No amend, force push or history rewrite was performed.
+
+### Git policy compliance
+
+- **No push.** Both Goal 02 commits remain local; `main` is ahead of
+  `origin/main`.
+- **No `git add .`** — 126 files were staged with explicit pathspecs.
+- No amend / history rewrite.
+- Reviewed commit created only after all verification gates,
+  `git diff --cached --check`, and a staged secret/artifact scan passed.
+- No real `.env`, APK/AAB, build output, cache or lock file staged
+  (`git diff --cached --name-only` audited — 126 files, all source/docs/SQL).
+- No Goal 03 work was started.
+
+### Known issues and limitations
+
+1. **Live MySQL schema not imported.** The agent did not run
+   `02_create_auth_tables.sql` against the live server. The developer must
+   import it (and verify with `03_verify_auth_tables.sql`) before auth
+   endpoints work against live MySQL. Automated tests use H2 and therefore
+   did not require the live schema.
+2. **No on-device install smoke test.** No `adb` device/emulator was attached,
+   so `adb install` was not run. APKs were verified with `aapt dump badging`
+   and `aapt dump xmltree` only.
+3. **Admin web refresh token is XSS-exposed.** It lives in `sessionStorage`
+   (not an HttpOnly cookie); the access token is memory-only. This trade-off
+   is documented honestly in `session.ts`; cookie hardening is deferred.
+4. **OTP verification not implemented.** It appears in the roadmap but is out
+   of the implemented Goal 02 scope.
+5. **First-admin bootstrap is opt-in** via
+   `APP_BOOTSTRAP_ADMIN_ENABLED` and must be disabled after one startup.
+6. **`pubspec.lock` is ignored** by the existing broad `*.lock` rule — an
+   accepted pre-existing repository policy; verified no lock file is tracked.
+7. **No automated CI pipeline** — deferred to Goal 18; all commands run
+   manually.
+8. **Non-fatal warnings observed:** LF→CRLF normalization on `git add`, a
+   generated Spring Security development password in test logs, and a Kotlin
+   incremental-compilation cache notice during Gradle. None affect the build.
+
+### Change log
+
+| Date | Change |
+|---|---|
+| 2026-11-10 | Goal 02 plan approved; implementation began from clean `main` (`2b828a6`) |
+| 2026-11-11 | Backend auth/role layer, SQL migrations, bootstrap and H2 integration suite completed |
+| 2026-11-11 | Admin web, customer app and rider app auth implemented; debug APKs built and verified |
+| 2026-11-11 | Documentation set updated; full verification sweep passed (57 tests) |
+| 2026-11-11 | Implementation committed as `3ca41ca`; status set to `READY_FOR_REVIEW` |
+| 2026-11-11 | This progress record committed as a separate follow-up; **no push** |
