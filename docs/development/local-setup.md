@@ -86,6 +86,12 @@ key, InnoDB and `utf8mb4_unicode_ci`. It contains no `DROP`, `TRUNCATE` or
 **The backend cannot serve auth requests until this script has been run.**
 Hibernate is pinned to `ddl-auto: none` and will not create the tables for you.
 
+> **On this machine (verified 2026-11-12):** `users` and `refresh_tokens`
+> already exist in `bd_quickmart` and were verified against this migration.
+> **Do not re-import** the script onto this database — it is
+> `CREATE TABLE IF NOT EXISTS`, so a repeat is harmless but unnecessary. Step 3
+> is only needed when setting up a fresh MySQL instance.
+
 ### Step 4 — Verify
 
 Run `infrastructure/database/init/01_verify_connection.sql` and then
@@ -97,10 +103,15 @@ expect to see:
 - `collation` = `utf8mb4_unicode_ci`
 - `03_verify_auth_tables.sql` returns exactly two rows: `refresh_tokens` and
   `users`, both `InnoDB` / `utf8mb4_unicode_ci`
+- all expected indexes, unique keys and the `fk_refresh_user` foreign key
 
-Before Goal 02's script is imported, the table list is empty — that is the
-correct Goal 01 state. If you see tables you did not create, stop and check
-which script was run.
+`03_verify_auth_tables.sql` is entirely read-only (`information_schema`
+`SELECT`s) and safe to run repeatedly. On 2026-11-12 it was executed against
+this machine's MySQL and returned exactly the layout described in
+[docs/database/schema.md](../database/schema.md). On a database where the
+script has **not** been imported, the table list is empty — that was the
+pre-import state. If you see tables you did not create, stop and check which
+script was run.
 
 ---
 
@@ -127,6 +138,13 @@ JWT_SECRET=<paste-generated-secret-here>
 makes the backend **refuse to start** (outside `dev`/`test`) rather than
 silently using a weak key. `JWT_ALLOW_EPHEMERAL_DEV_KEY=true` is an emergency
 local-dev escape hatch whose key invalidates all tokens on restart.
+
+> **Verified on this machine (2026-11-12):** a >=32-byte random `JWT_SECRET`
+> is set in the ignored `.env`, `JWT_ALLOW_EPHEMERAL_DEV_KEY=false`, access TTL
+> `900` / refresh TTL `604800`. Starting the jar with `JWT_SECRET` removed and
+> the escape hatch off was confirmed to fail fast with
+> `IllegalStateException: JWT_SECRET is not configured` (exit 1) — no weak or
+> ephemeral key was used. Never print or commit the secret.
 
 > The Spring backend does not read a `.env` file by itself. Export the
 > variables in your shell before starting, or paste them into your IDE's run
@@ -155,6 +173,11 @@ using the commented template in
 `infrastructure/database/init/04_admin_bootstrap_TEMPLATE.sql`. The runner
 skips creation when a `SUPER_ADMIN` already exists and never logs the
 password.
+
+> **Verified on this machine (2026-11-12):** the opt-in runner was used once;
+> exactly one `SUPER_ADMIN` (`ACTIVE`) exists, successfully logged in and
+> reached privileged endpoints, and `APP_BOOTSTRAP_ADMIN_ENABLED` is `false`
+> again in `.env`. No bootstrap credential is committed.
 
 ### Customer and Rider apps
 
@@ -301,8 +324,12 @@ flutter test      # expect: +14: All tests passed!
 
 ```bash
 flutter build apk --debug
-# → build/app/outputs/flutter-apk/app-debug.apk  (~159 MB)
+# → build/app/outputs/flutter-apk/app-debug.apk  (166,090,410 bytes)
 ```
+
+A verified delivery copy is kept at
+`installers/BD-QuickMart-Customer.apk` — see
+[Verified installable debug APKs](#verified-installable-debug-apks).
 
 Install it on a connected device/emulator:
 
@@ -340,8 +367,12 @@ flutter test      # expect: +16: All tests passed!
 
 ```bash
 flutter build apk --debug
-# → build/app/outputs/flutter-apk/app-debug.apk  (~161 MB)
+# → build/app/outputs/flutter-apk/app-debug.apk  (167,905,227 bytes)
 ```
+
+A verified delivery copy is kept at
+`installers/BD-QuickMart-Rider.apk` — see
+[Verified installable debug APKs](#verified-installable-debug-apks).
 
 Install it on a connected device/emulator:
 
@@ -379,6 +410,13 @@ npm run lint     # expect: 0 warnings and 0 errors
 npm run build    # expect: built successfully
 ```
 
+> **Verified on this machine (2026-11-12):** `npm run lint` returned
+> `Found 0 warnings and 0 errors.` (24 files, 116 rules) and `npm run build`
+> transformed 98 modules (`✓ built in 1.25s`). Browser-level E2E (privileged
+> login, CUSTOMER/RIDER denial, expired session, refresh failure, logout) was
+> **not** automated; it remains a manual developer acceptance step. See
+> [docs/progress.md](../progress.md).
+
 ---
 
 ## 7. Full verification sweep
@@ -398,6 +436,63 @@ cd ../rider-app && flutter analyze && flutter test && flutter build apk --debug
 # Admin web
 cd ../admin-web && npm run lint && npm run build
 ```
+
+### Verified results (2026-11-12)
+
+The full sweep was re-run after the final source and documentation changes.
+All commands exited `0`:
+
+| Check | Result |
+|---|---|
+| `mvn -B clean verify` | `BUILD SUCCESS` — `Tests run: 27, Failures: 0, Errors: 0, Skipped: 0` |
+| `customer-app`: `flutter analyze` | `No issues found!` |
+| `customer-app`: `flutter test` | `+14: All tests passed!` |
+| `customer-app`: `flutter build apk --debug` | `app-debug.apk` built, 166,090,410 bytes |
+| `rider-app`: `flutter analyze` | `No issues found!` |
+| `rider-app`: `flutter test` | `+16: All tests passed!` |
+| `rider-app`: `flutter build apk --debug` | `app-debug.apk` built, 167,905,227 bytes |
+| `admin-web`: `npm run lint` | `Found 0 warnings and 0 errors.` (24 files, 116 rules) |
+| `admin-web`: `npm run build` | `✓ 98 modules transformed`, `✓ built in 1.25s` |
+
+**Total automated tests: 57** (backend 27 + customer 14 + rider 16). Admin web
+has no test runner and is verified via lint + production build. The freshly
+rebuilt APKs were byte-identical to the delivery copies below, so the recorded
+SHA-256 hashes did not change.
+
+### Verified installable debug APKs
+
+Final delivery copies (git-ignored, **not** committed):
+
+| App | Build output | Delivery copy | Size (bytes) | SHA-256 | Application ID |
+|---|---|---|---|---|---|
+| Customer | `customer-app/build/app/outputs/flutter-apk/app-debug.apk` | `installers/BD-QuickMart-Customer.apk` | 166,090,410 | `0ad369221d418b4a527fdb42b7aed8eaae1f90ea82c583ff9f89efa61a9ba225` | `com.bdquickmart.customer_app` |
+| Rider | `rider-app/build/app/outputs/flutter-apk/app-debug.apk` | `installers/BD-QuickMart-Rider.apk` | 167,905,227 | `25b91d222b60c43a43e95624172c4b3731caf40204cf6e28c55d015524cda5ce` | `com.bdquickmart.rider_app` |
+
+Both are `versionName 0.1.0`, minSdk 24 / targetSdk 36, declare
+`android.permission.INTERNET`, and enable cleartext only in debug/profile
+manifests. No production secrets are embedded in either APK.
+
+Install on a connected device/emulator with:
+
+```bash
+adb install -r installers/BD-QuickMart-Customer.apk
+adb install -r installers/BD-QuickMart-Rider.apk
+```
+
+**Device networking:** the shipped default is the Android-emulator URL
+`http://10.0.2.2:8080/api/v1`. On a physical device that address does not
+resolve — open the sign-in screen's **Change server URL** dialog (or build with
+`flutter run --dart-define API_BASE_URL=http://<PC-LAN-IP>:8080/api/v1`) and
+point at your machine's LAN IP, with the phone and PC on the same Wi-Fi and the
+firewall allowing port 8080. Debug/profile builds permit HTTP cleartext to that
+host; release builds do not.
+
+> **No device attached (2026-11-12):** `adb devices` returned no attached
+> device/emulator, so `adb install` and any on-device walkthrough were **not**
+> performed and are not claimed. The APKs were verified by a successful build,
+> `aapt dump badging` / `aapt dump xmltree`, size/SHA-256 recording and a
+> production-secret scan. On-device installation and the in-app customer /
+> rider approval walkthrough remain manual developer acceptance steps.
 
 ---
 

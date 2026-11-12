@@ -728,15 +728,21 @@ receive this work.
 | **Goal name** | Authentication & Role Management |
 | **Status** | `READY_FOR_REVIEW` |
 | **Started** | 2026-11-10 |
-| **Completed** | 2026-11-11 |
+| **Implementation completed** | 2026-11-11 |
+| **Finalization verified** | 2026-11-12 |
 | **Next permitted goal** | Goal 03 — must not begin until Goal 02 is accepted |
 
-> Status is `READY_FOR_REVIEW`, **not** `ACCEPTED`. All four applications build
-> and every automated test passes, but acceptance is gated on manual steps the
-> agent must not perform: importing the SQL migrations into live MySQL, setting
-> `JWT_SECRET`, bootstrapping the first administrator, and exercising the flows
-> on a real device/emulator. The Goal 02 brief explicitly forbids marking a
-> goal `ACCEPTED` merely because code compiles.
+> Status remains `READY_FOR_REVIEW`, **not** `ACCEPTED`. The 2026-11-12
+> finalization closed three of the four earlier blockers: the auth tables are
+> present in the live MySQL database and were verified against the migrations,
+> `JWT_SECRET` is configured (fail-safe startup confirmed), and the first
+> `SUPER_ADMIN` was bootstrapped and disabled again. Live HTTP requests against
+> real MySQL now back the authentication, six-role authorization and rider
+> approval results. Acceptance is still gated on manual **on-device /
+> emulator** testing (no `adb` device was attached) and browser-level admin-web
+> E2E, which the developer must perform. The Goal 02 brief explicitly forbids
+> marking a goal `ACCEPTED` merely because code compiles, and requires keeping
+> `READY_FOR_REVIEW` when manual testing is still outstanding.
 
 ---
 
@@ -772,16 +778,44 @@ Flutter 3.35.1 (Dart 3.9.0) · Node 22.22.2 · Android SDK build-tools 36.1.0.
 Admin web has no test runner configured; it is verified via lint + production
 build.
 
+#### Finalization re-verification (2026-11-12)
+
+All commands below were re-run after the Goal 02 commits, from a clean `main`.
+
+| # | Check | Result |
+|---|---|---|
+| 12 | `cd backend && mvn -B clean verify` | `BUILD SUCCESS` — `Tests run: 27, Failures: 0, Errors: 0, Skipped: 0`; fresh jar built |
+| 13 | Start jar with **no** `JWT_SECRET`, `JWT_ALLOW_EPHEMERAL_DEV_KEY=false` | Refused to start (`JAVA_EXIT=1`, `IllegalStateException: JWT_SECRET is not configured`) — **fail-safe verified**, no ephemeral-key fallback |
+| 14 | Start jar with generated `.env` against **live MySQL** (port 8080) | Started; `GET /api/v1/health` reported `database: UP`; Hikari/MySQLDialect connected |
+| 15 | `03_verify_auth_tables.sql` (read-only) | Both tables `InnoDB` / `utf8mb4_unicode_ci`; all columns, indexes, unique keys and the `fk_refresh_user` foreign key match `02_create_auth_tables.sql` |
+| 16 | Live HTTP auth suite (real MySQL) | **24/24 PASS** — registration (CUSTOMER/RIDER/PENDING), duplicate 409, privileged self-registration rejected, validation, login by email/phone, invalid password/unknown identifier, SUPER_ADMIN login, `/auth/me`, malformed/refresh-token-as-bearer rejection, access TTL 900s / refresh TTL 604800s, claims carry `role`+`purpose`, refresh rotation, replay revokes the family, logout, revoked-token rejection |
+| 17 | Live six-role + rider approval suite (real MySQL) | **31/31 PASS** — single-SUPER_ADMIN bootstrap check, F1–F16 least-privilege matrix (CUSTOMER/RIDER denied admin routes; STORE_MANAGER/INVENTORY_OPERATOR denied rider approval), G1–G11 rider `PENDING` → approve via protected API → DB `ACTIVE` → re-auth reaches dashboard, H1–H3 reject leaves account blocked, all six roles present in MySQL |
+| 18 | Live customer session + CORS suite (real MySQL) | **9/9 PASS** — register/login/`/auth/me`, session restored from stored refresh token, `/auth/me` with restored token, refresh rotation invalidates the old token, logout, refresh-token reuse rejected after logout, CORS preflight for `http://localhost:5173` |
+| 19 | `cd admin-web && npm install && npm run lint && npm run build` | 60 packages / `0 vulnerabilities`; `0 warnings and 0 errors`; `98 modules transformed`, exit 0 |
+| 20 | `cd customer-app && flutter pub get && flutter analyze && flutter test && flutter build apk --debug` | `No issues found!`; `+14: All tests passed!`; APK built, exit 0 |
+| 21 | `cd rider-app && flutter pub get && flutter analyze && flutter test && flutter build apk --debug` | `No issues found!`; `+16: All tests passed!`; APK built, exit 0 |
+| 22 | `aapt dump badging` / `aapt dump xmltree` on both rebuilt APKs | distinct application IDs, `versionName 0.1.0`, minSdk 24 / targetSdk 36, `INTERNET`, `usesCleartextTraffic` present in debug manifest only |
+| 23 | APK production-secret scan | No `JWT_SECRET`, DB URL, admin bootstrap email/password or admin API URL found in either APK |
+| 24 | `adb devices` | No device/emulator attached → **no install smoke test performed** |
+| 25 | Tracked-file secret/artifact scan | 321 tracked files; no real secrets (all regex hits were UI labels / placeholders), no real `.env`, no APK/AAB/build/cache artifacts; `git diff --check` clean |
+
+**Total live HTTP checks: 64** (24 + 31 + 9), all passing against real MySQL —
+in addition to the 57 automated tests. No result in this table comes from H2.
+
 #### Installable debug APKs
 
-| App | Path | Size | Application ID |
-|---|---|---|---|
-| Customer | `customer-app/build/app/outputs/flutter-apk/app-debug.apk` | 159M | `com.bdquickmart.customer_app` |
-| Rider | `rider-app/build/app/outputs/flutter-apk/app-debug.apk` | 161M | `com.bdquickmart.rider_app` |
+Final copies were placed in `installers/` (git-ignored, **not** committed):
+
+| App | Build output | Delivery copy | Size (bytes) | SHA-256 | Application ID |
+|---|---|---|---|---|---|
+| Customer | `customer-app/build/app/outputs/flutter-apk/app-debug.apk` | `installers/BD-QuickMart-Customer.apk` | 166,090,410 | `0ad369221d418b4a527fdb42b7aed8eaae1f90ea82c583ff9f89efa61a9ba225` | `com.bdquickmart.customer_app` |
+| Rider | `rider-app/build/app/outputs/flutter-apk/app-debug.apk` | `installers/BD-QuickMart-Rider.apk` | 167,905,227 | `25b91d222b60c43a43e95624172c4b3731caf40204cf6e28c55d015524cda5ce` | `com.bdquickmart.rider_app` |
 
 Both are `versionName 0.1.0`, minSdk 24 / targetSdk 36, declare
 `android.permission.INTERNET`, and enable cleartext only in debug/profile
-manifests. Both APKs are git-ignored and were **not** committed.
+manifests (the main manifest has no cleartext flag). Both APKs and the
+`installers/` folder are git-ignored and were **not** committed. No production
+secrets are embedded in either APK.
 
 ### Commit record
 
@@ -798,6 +832,11 @@ The implementation commit intentionally excluded `docs/progress.md` so that
 `3ca41ca` could be recorded here; this document is committed afterwards as a
 second commit. No amend, force push or history rewrite was performed.
 
+> This table and the "Git policy compliance" list below record the state **as of
+> 2026-11-11**, when the Goal 02 brief required no push. The 2026-11-12
+> finalization task explicitly authorized a normal fast-forward push; see
+> "Goal 02 finalization" below for the current push status.
+
 ### Git policy compliance
 
 - **No push.** Both Goal 02 commits remain local; `main` is ahead of
@@ -812,28 +851,105 @@ second commit. No amend, force push or history rewrite was performed.
 
 ### Known issues and limitations
 
-1. **Live MySQL schema not imported.** The agent did not run
-   `02_create_auth_tables.sql` against the live server. The developer must
-   import it (and verify with `03_verify_auth_tables.sql`) before auth
-   endpoints work against live MySQL. Automated tests use H2 and therefore
-   did not require the live schema.
-2. **No on-device install smoke test.** No `adb` device/emulator was attached,
-   so `adb install` was not run. APKs were verified with `aapt dump badging`
-   and `aapt dump xmltree` only.
-3. **Admin web refresh token is XSS-exposed.** It lives in `sessionStorage`
-   (not an HttpOnly cookie); the access token is memory-only. This trade-off
-   is documented honestly in `session.ts`; cookie hardening is deferred.
-4. **OTP verification not implemented.** It appears in the roadmap but is out
+1. **Live MySQL schema — resolved (2026-11-12).** `users` and
+   `refresh_tokens` exist in the developer's `bd_quickmart` database and were
+   verified against `02_create_auth_tables.sql` with the read-only
+   `03_verify_auth_tables.sql` (columns, indexes, unique keys, foreign key,
+   engine and collation all match). All 64 live HTTP checks ran against this
+   real MySQL instance, not H2. The SQL scripts remain in the repository for
+   re-creation on a fresh machine; do not re-import them onto this database
+   (they are `CREATE TABLE IF NOT EXISTS`, so a repeat is harmless but
+   unnecessary).
+2. **No on-device install smoke test — still open.** `adb devices` returned no
+   attached device/emulator, so `adb install` was not run and the apps were
+   not opened on a phone. APKs were verified with `aapt dump badging`,
+   `aapt dump xmltree`, size/hash recording and a secret scan. The in-app
+   "Pending Approval" display, close/reopen session restoration and the
+   physical-device LAN URL were therefore validated at the API/session layer
+   and by source review, not by manual device operation.
+3. **No browser-level admin-web E2E.** The admin route guards, login, silent
+   refresh, session-expiry/failure handling and logout were verified by code
+   review, lint, production build and the backend authorization matrix, but
+   no automated browser session was driven. Manual browser walkthrough remains
+   a developer acceptance step.
+4. **Admin web refresh token is XSS-exposed — known production-hardening
+   issue.** It lives in `sessionStorage` (not an HttpOnly cookie); the access
+   token is memory-only. The brief's proposed `HttpOnly` / `Secure` /
+   `SameSite` cookie migration was **evaluated and deliberately deferred**:
+   doing it properly requires changing the shared backend auth contract
+   (`login` / `refresh` / `logout`), enabling CSRF protection (currently
+   disabled for the stateless bearer API), `withCredentials` handling and a
+   coordinated rewrite of both Flutter apps plus the full test suite. A
+   half-working cookie implementation would break the verified end-to-end
+   auth, so the working implementation was kept and the trade-off documented
+   in `admin-web/src/features/auth/session.ts` and
+   `docs/development/local-setup.md`.
+5. **OTP verification not implemented.** It appears in the roadmap but is out
    of the implemented Goal 02 scope.
-5. **First-admin bootstrap is opt-in** via
-   `APP_BOOTSTRAP_ADMIN_ENABLED` and must be disabled after one startup.
-6. **`pubspec.lock` is ignored** by the existing broad `*.lock` rule — an
+6. **First-admin bootstrap is opt-in** via `APP_BOOTSTRAP_ADMIN_ENABLED`. It
+   was exercised once on 2026-11-12 and is now `false` again in `.env`; the
+   resulting single `SUPER_ADMIN` was verified to log in and reach privileged
+   endpoints. No bootstrap credential is committed.
+7. **`pubspec.lock` is ignored** by the existing broad `*.lock` rule — an
    accepted pre-existing repository policy; verified no lock file is tracked.
-7. **No automated CI pipeline** — deferred to Goal 18; all commands run
+8. **No automated CI pipeline** — deferred to Goal 18; all commands run
    manually.
-8. **Non-fatal warnings observed:** LF→CRLF normalization on `git add`, a
+9. **Non-fatal warnings observed:** LF→CRLF normalization on `git add`, a
    generated Spring Security development password in test logs, and a Kotlin
    incremental-compilation cache notice during Gradle. None affect the build.
+10. **Test accounts created in local MySQL.** The live verification registered
+    throwaway CUSTOMER/RIDER/STORE_MANAGER/INVENTORY_OPERATOR rows and refresh
+    tokens in the developer's own database (10 users, 16 refresh tokens at the
+    time of the check). These are local test data, not committed credentials;
+    the developer may delete them through phpMyAdmin at their discretion. The
+    agent did not drop, recreate or alter any schema object.
+
+### Goal 02 finalization (2026-11-12)
+
+A separate developer brief — *"Goal 02 Finalization, Real-Device Verification &
+GitHub Push"* — authorized finishing developer-run verification, fixing genuine
+defects, preparing installable apps, a security review, documentation updates,
+and a **normal fast-forward push** (no force-push, no history rewrite).
+
+**Verified state at the start:** clean `main`, `HEAD = f5e8061`, two commits
+ahead of `origin/main` (`2b828a6`), remote
+`https://github.com/Shri7ul/BD-Quickmart-.git`. No user changes were present.
+
+**What was done**
+
+| Area | Result |
+|---|---|
+| MySQL (read-only) | `03_verify_auth_tables.sql` run; `users` + `refresh_tokens` present and matching the migration (columns, indexes, unique keys, FK, InnoDB/utf8mb4_unicode_ci). No schema object was dropped, created or altered. |
+| JWT | A >=32-byte random secret was generated into the git-ignored `.env` (never committed, never printed). `JWT_ALLOW_EPHEMERAL_DEV_KEY=false`. Fail-safe startup without `JWT_SECRET` verified (`IllegalStateException`, exit 1). Live tokens: access 900s / refresh 604800s. |
+| SUPER_ADMIN bootstrap | Opt-in runner used once; exactly one `SUPER_ADMIN` exists (`ACTIVE`), login + privileged endpoints verified, then `APP_BOOTSTRAP_ADMIN_ENABLED=false` again. No credential committed. |
+| Backend | `mvn -B clean verify` `BUILD SUCCESS`, 27 tests. 64 live HTTP checks against real MySQL all passed (see the re-verification table above). |
+| Customer / Rider apps | `pub get`, `analyze`, `test` (14 + 16) and `flutter build apk --debug` all passed; APKs parsed with `aapt`; distinct IDs, `INTERNET`, debug-only cleartext; no embedded production secrets; delivery copies in `installers/` with sizes + SHA-256. |
+| Admin web | `npm install` (0 vulnerabilities), `npm run lint` (0/0), `npm run build` (98 modules). HttpOnly-cookie migration evaluated and deferred (see known issue 4). |
+| Six roles | Verified consistent across MySQL schema, backend enum, JWT claims, Spring Security authorities, API authorization, admin TS types, Flutter gates and docs; least privilege preserved; public self-registration still CUSTOMER/RIDER only. |
+| Security audit | 321 tracked files; no real secrets, no real `.env`, no APK/AAB/build/cache artifacts; `.gitignore` extended with `installers/`; `git diff --check` clean. |
+| Device | `adb devices` returned no device → **no installation or on-device testing claimed**. |
+
+**Remaining blockers before `ACCEPTED`**
+
+1. Install both `installers/` APKs on a physical device or emulator and walk
+   through customer registration/login/session-restore/logout and rider
+   registration → Pending Approval → admin approval → dashboard.
+2. Perform a browser-level admin-web walkthrough (privileged login,
+   CUSTOMER/RIDER denial, expired session, refresh failure, logout).
+3. Decide on the HttpOnly/Secure/SameSite refresh-cookie hardening for a
+   production deployment (a larger architectural change).
+
+**Status:** `READY_FOR_REVIEW` — unchanged. Every mandatory criterion that can
+be evidenced without a device has evidence; the brief requires keeping
+`READY_FOR_REVIEW` when manual device/browser testing is still outstanding.
+
+**Git:** a normal fast-forward push to `origin/main` is explicitly authorized
+for this task and is executed as the final gate after the reviewed
+finalization commit. No force-push, no amend, no history rewrite, no
+`git reset --hard`, no `git clean -fd`, no `git add .`. The resulting remote
+commit hash and final Git status are reported in the Goal 02 final
+deliverables report (not duplicated here, since this document is committed
+before the push). No Goal 03 work was started.
 
 ### Change log
 
@@ -844,4 +960,9 @@ second commit. No amend, force push or history rewrite was performed.
 | 2026-11-11 | Admin web, customer app and rider app auth implemented; debug APKs built and verified |
 | 2026-11-11 | Documentation set updated; full verification sweep passed (57 tests) |
 | 2026-11-11 | Implementation committed as `3ca41ca`; status set to `READY_FOR_REVIEW` |
-| 2026-11-11 | This progress record committed as a separate follow-up; **no push** |
+| 2026-11-11 | This progress record committed as a separate follow-up; **no push** (per the then-current policy) |
+| 2026-11-12 | Finalization: live MySQL schema verification and 64 live HTTP checks against real MySQL all passed |
+| 2026-11-12 | JWT secret configured + fail-safe verified; first `SUPER_ADMIN` bootstrapped and bootstrap disabled again |
+| 2026-11-12 | Both Flutter apps re-verified and rebuilt; `installers/` delivery APKs with sizes + SHA-256; no secrets embedded |
+| 2026-11-12 | Admin web `npm install`/lint/build clean; HttpOnly-cookie migration evaluated and deferred with documented trade-off |
+| 2026-11-12 | Six-role consistency + final security audit passed; status kept `READY_FOR_REVIEW` |

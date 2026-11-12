@@ -145,6 +145,20 @@ HTTP cleartext to that host; release builds keep cleartext disabled.
 | Customer debug APK | `cd customer-app && flutter build apk --debug` | `✓ Built build/app/outputs/flutter-apk/app-debug.apk` |
 | Rider debug APK | `cd rider-app && flutter build apk --debug` | `✓ Built build/app/outputs/flutter-apk/app-debug.apk` |
 
+#### Installable debug APKs
+
+Final delivery copies (git-ignored, not committed):
+
+| App | Path | Size (bytes) | SHA-256 | Application ID |
+|---|---|---|---|---|
+| Customer | `installers/BD-QuickMart-Customer.apk` | 166,090,410 | `0ad369221d418b4a527fdb42b7aed8eaae1f90ea82c583ff9f89efa61a9ba225` | `com.bdquickmart.customer_app` |
+| Rider | `installers/BD-QuickMart-Rider.apk` | 167,905,227 | `25b91d222b60c43a43e95624172c4b3731caf40204cf6e28c55d015524cda5ce` | `com.bdquickmart.rider_app` |
+
+Both target the Android emulator at `http://10.0.2.2:8080/api/v1` by default.
+On a physical device, use the sign-in screen's **Change server URL** dialog to
+point at `http://<PC-LAN-IP>:8080/api/v1` — no rebuild is needed. See
+[docs/development/local-setup.md](docs/development/local-setup.md).
+
 Latest recorded results: [docs/progress.md](docs/progress.md).
 
 ---
@@ -238,12 +252,21 @@ with distinct application IDs.
 **No Goal 03 business feature is implemented.** Screens that would show live
 catalogue/order data remain placeholders that state which goal delivers them.
 
+Goal 02 was finalised on 2026-11-12: the auth tables are present in live
+MySQL and verified against the migrations, `JWT_SECRET` is configured with
+fail-safe startup, the first `SUPER_ADMIN` was bootstrapped (and the bootstrap
+disabled again), and 64 live HTTP checks against real MySQL passed in addition
+to the 57 automated tests. See [docs/progress.md](docs/progress.md) for the
+full evidence.
+
 Known limitations are recorded honestly in
-[docs/progress.md](docs/progress.md) — notably that the auth tables must be
-imported into MySQL manually before the backend can serve auth requests, that
-no device/emulator was available for an on-device install smoke test, and that
-the admin web's refresh token lives in `sessionStorage` (memory-only access
-token, XSS-exposed — no HttpOnly cookies).
+[docs/progress.md](docs/progress.md) — notably that **no device/emulator was
+available**, so no on-device install or in-app walkthrough was performed
+(APKs were verified with `aapt`, size/hash recording and a secret scan), that
+no browser-level admin-web E2E was automated, and that the admin web's
+refresh token lives in `sessionStorage` (memory-only access token,
+XSS-exposed — no HttpOnly cookies; the cookie migration was evaluated and
+deferred as a production-hardening item).
 
 ---
 

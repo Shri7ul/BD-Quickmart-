@@ -9,10 +9,15 @@
 >
 > Goal 02 ships `02_create_auth_tables.sql` defining `users` and
 > `refresh_tokens`, plus a read-only verification script and a first-admin
-> bootstrap template. **The agent verified the live MySQL server read-only and
-> did not import these tables** — importing them is a manual developer action
-> (see [`docs/development/local-setup.md`](../development/local-setup.md)).
-> Until that import is run, the live `bd_quickmart` still contains zero tables.
+> bootstrap template. **On this machine (verified 2026-11-12)** the two auth
+> tables are present in `bd_quickmart`: with explicit developer approval the
+> `CREATE TABLE IF NOT EXISTS` script was run once during finalization, and the
+> resulting schema was checked with the read-only `03_verify_auth_tables.sql`
+> (see [§3](#3-current-schema-state)). On a **fresh** machine, running
+> `00_create_database.sql` then `02_create_auth_tables.sql` remains a manual
+> developer action (see
+> [`docs/development/local-setup.md`](../development/local-setup.md)); no
+> schema object was dropped, recreated or altered by the agent.
 >
 > The remaining module tables are produced in later, separately approved
 > goals. This document records what is fixed now so that later design work
@@ -60,11 +65,32 @@ password is a `<BCRYPT_HASH>` placeholder.
 
 ## 3. Current schema state
 
-**Defined in migrations, not yet imported into the live server.** Goal 01
-prepared only the connection foundation; Goal 02 adds the first two tables as
-SQL migration scripts. A read-only check of the live server on 2026-11-11 still
-returned `table_count = 0` for `bd_quickmart` — the developer must run
-`02_create_auth_tables.sql` before the backend can serve auth requests.
+**Verified against the live server (2026-11-12).** Both Goal 02 tables are
+present in the developer's `bd_quickmart` database. The read-only
+`03_verify_auth_tables.sql` was executed and returned:
+
+- `refresh_tokens` and `users`, both `ENGINE = InnoDB` and
+  `utf8mb4_unicode_ci`;
+- the exact column layout, types and nullability listed below;
+- all expected indexes and unique keys (`uk_users_public_id`,
+  `uk_users_email`, `uk_users_phone`, `idx_users_role_status`,
+  `uk_refresh_token_hash`, `idx_refresh_family`, `idx_refresh_user`);
+- the `fk_refresh_user` foreign key from `refresh_tokens.user_id` to
+  `users.id`.
+
+At the time of the check the tables held 10 `users` rows and 16
+`refresh_tokens` rows (throwaway accounts created by the live HTTP
+verification). All six roles were present. The live application served the
+complete auth / role / rider-approval verification suite against this real
+MySQL instance — no result depended on H2.
+
+> Historical note: on 2026-11-11 a read-only check returned `table_count = 0`;
+> that was the pre-import state. On a **fresh** machine, run
+> `00_create_database.sql` then `02_create_auth_tables.sql` through phpMyAdmin
+> before the backend can serve auth requests. Do not re-import onto a database
+> where the tables already exist — the script is `CREATE TABLE IF NOT EXISTS`,
+> so a repeat is harmless but unnecessary. No schema object was dropped,
+> recreated or altered by the agent.
 
 `ddl-auto` is pinned to `none` in `backend/src/main/resources/application.yml`,
 so Hibernate will never create or alter tables on its own. Schema ownership

@@ -87,6 +87,15 @@ alternative is documented in
 a commented `INSERT` and a `<BCRYPT_HASH>` placeholder — intentionally not
 runnable as-is).
 
+> **Verified configuration on this machine (2026-11-12):** a >=32-byte random
+> `JWT_SECRET` is set in the git-ignored root `.env` (never committed, never
+> printed), `JWT_ALLOW_EPHEMERAL_DEV_KEY=false`, access TTL `900` / refresh TTL
+> `604800`. The backend was confirmed to **fail fast** when `JWT_SECRET` is
+> absent and the ephemeral escape hatch is off. The opt-in bootstrap was run
+> once, produced exactly one `SUPER_ADMIN`, and
+> `APP_BOOTSTRAP_ADMIN_ENABLED` is `false` again. These values are local
+> developer settings — do not copy the real `.env` into the repository.
+
 ---
 
 ## 2. Customer app (`customer-app/`)
@@ -135,6 +144,14 @@ things to each.
 | iOS simulator | `http://localhost:8080/api/v1` | `ws://localhost:8080/ws/tracking` |
 | Browser (admin web) | `http://localhost:8080/api/v1` | `ws://localhost:8080/ws/tracking` |
 | Physical device | `http://<LAN-IP>:8080/api/v1` | `ws://<LAN-IP>:8080/ws/tracking` |
+
+Both Flutter apps also support a **runtime** override: the sign-in screen's
+**Change server URL** dialog persists a new base URL in local storage
+(`ServerConfig`), so a physical device can be pointed at the PC's LAN IP
+without rebuilding the APK. A compile-time override is also available via
+`flutter run --dart-define API_BASE_URL=http://<LAN-IP>:8080/api/v1`. Never
+ship an unverified hardcoded PC IP — the shipped default is the emulator-only
+`10.0.2.2`.
 
 ---
 
