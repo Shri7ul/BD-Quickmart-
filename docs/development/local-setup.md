@@ -148,11 +148,32 @@ local-dev escape hatch whose key invalidates all tokens on restart.
 
 > The Spring backend does not read a `.env` file by itself. Export the
 > variables in your shell before starting, or paste them into your IDE's run
-> configuration:
+> configuration.
+>
+> **Linux / macOS / Git Bash:**
 >
 > ```bash
 > export $(grep -v '^#' .env | xargs)
 > ```
+>
+> **Windows / PowerShell (recommended on this machine):** the `export` line
+> above is a Bash command and does nothing in PowerShell. Running
+> `mvn spring-boot:run` directly therefore leaves `JWT_SECRET` blank and the
+> backend fails fast with `IllegalStateException: JWT_SECRET is not
+> configured`. Use the repository-root launcher instead, from the repository
+> root:
+>
+> ```powershell
+> .\start-backend.ps1
+> ```
+>
+> It reads the root `.env`, sets each value as a process-scoped environment
+> variable (inherited by Maven and the JVM it forks), never prints any value,
+> leaves variables already set in the environment untouched (so real CI / IDE /
+> production configuration wins), and clears them again when the backend stops.
+> See `start-backend.ps1` for the full description. If your execution policy
+> blocks local scripts, run
+> `powershell -ExecutionPolicy Bypass -File .\start-backend.ps1`.
 
 ### First administrator (Goal 02, one-time)
 
@@ -206,8 +227,27 @@ The default `http://localhost:8080/api/v1` is correct for browser use.
 
 ## 3. Running the backend
 
+### Windows / PowerShell (documented command)
+
+From the **repository root**:
+
+```powershell
+.\start-backend.ps1
+```
+
+This loads the root `.env` and then runs `mvn spring-boot:run` from `backend/`.
+Prerequisites: JDK 21 and Maven on `PATH` (see [Toolchain](#0-toolchain)).
+If the execution policy blocks the script, use
+`powershell -ExecutionPolicy Bypass -File .\start-backend.ps1`.
+
+### Linux / macOS / Git Bash, or an IDE run configuration
+
+The Spring backend does not read `.env` by itself, so export the variables
+first (or set them in the IDE run configuration) before starting:
+
 ```bash
 cd backend
+export $(grep -v '^#' ../.env | xargs)
 mvn spring-boot:run
 ```
 
@@ -515,6 +555,14 @@ secret (`openssl rand -base64 48`) and set `JWT_SECRET` in `.env` / your IDE
 run configuration. Only for local development you may instead set
 `JWT_ALLOW_EPHEMERAL_DEV_KEY=true`, but every token then invalidates on
 restart.
+
+On Windows PowerShell the usual cause is that the root `.env` was never
+loaded: `mvn spring-boot:run` does not read `.env` on its own, so the
+`${JWT_SECRET:}` placeholder resolves to blank and `JwtConfig` throws at
+startup. Start with `.\start-backend.ps1` from the repository root instead
+(see [Running the backend](#3-running-the-backend)). Do not "fix" this by
+enabling `JWT_ALLOW_EPHEMERAL_DEV_KEY` — that only masks the missing
+configuration and invalidates every token on restart.
 
 **Auth endpoints return 500 / "Table 'bd_quickmart.users' doesn't exist"** —
 `02_create_auth_tables.sql` has not been imported yet. Hibernate is pinned to

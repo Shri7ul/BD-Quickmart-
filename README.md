@@ -107,6 +107,23 @@ Alternatively, insert a `SUPER_ADMIN` row manually with a BCrypt hash — see
 
 ### 4. Run
 
+**Windows / PowerShell (recommended on this machine):** from the repository
+root, start the backend with the `.env` launcher:
+
+```powershell
+.\start-backend.ps1
+```
+
+`mvn spring-boot:run` does not read `.env` by itself; the launcher loads the
+root `.env` into the backend process without printing any secret, already-set
+environment variables are not overridden, and the shell is restored on exit.
+If your execution policy blocks local scripts, use
+`powershell -ExecutionPolicy Bypass -File .\start-backend.ps1`.
+
+**Linux / macOS / Git Bash / IDE:** export the root `.env` first (or set the
+values in your IDE run configuration) — see
+[local-setup.md](docs/development/local-setup.md#3-running-the-backend).
+
 ```bash
 # Backend — http://localhost:8080
 cd backend && mvn spring-boot:run

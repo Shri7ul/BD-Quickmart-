@@ -11,6 +11,17 @@ has an `.env.example`; the matching `.env` is git-ignored.
 Read via `application.yml` placeholders and the `app.*` configuration
 properties.
 
+> **How the values reach the process.** Spring Boot does not read `.env` files.
+> On Windows PowerShell, start the backend from the repository root with
+> `.\start-backend.ps1`, which loads the root `.env` into the process
+> environment (values are never printed, variables already set in the
+> environment are not overridden, and the shell is restored on exit). On
+> Linux / macOS / Git Bash, export the variables first, or set them in an IDE
+> run configuration. See
+> [local-setup.md](local-setup.md#3-running-the-backend). Production keeps
+> using real environment variables with the packaged jar — this launcher is a
+> local-development convenience only.
+
 ### Database
 
 | Variable | Default | Required | Description |
