@@ -87,6 +87,11 @@ services:
       # ---- Server / deployment -----------------------------------------
       # Render injects PORT automatically. DO NOT set PORT here; leave it
       # unset so the app binds via ${PORT:${SERVER_PORT:8080}}.
+      # Verified live 2026-11-14: https://bd-quickmart-backend.onrender.com
+      # (OpenAPI "BD QuickMart API", liveness 200, /api/v1/health 200,
+      # WSS 101). Set APP_PUBLIC_URL to that exact URL in the Render
+      # dashboard so OpenAPI/link generation uses the public host instead
+      # of the current stale http://localhost:8080 default.
       - key: APP_PUBLIC_URL
         sync: false
 
@@ -94,6 +99,9 @@ services:
       # Exact Vercel production origin(s), comma-separated. Wildcards are
       # invalid because WebConfig uses setAllowCredentials(true). No URL is
       # invented here - supply the real origin after Vercel is deployed.
+      # VERIFIED 2026-11-14: only localhost:5173 / localhost:3000 are
+      # currently allowed; vercel.app origins return 403. Add the real
+      # Vercel origin here (see docs/development/DEPLOYMENT.md).
       - key: APP_CORS_ALLOWED_ORIGINS
         sync: false
 

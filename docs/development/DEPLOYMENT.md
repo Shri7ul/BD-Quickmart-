@@ -1,9 +1,19 @@
 # BD QuickMart — Deployment Guide
 
 End-to-end deployment instructions for the cloud topology. **No credential,
-password, JWT secret, keystore or real hostname appears in this document** —
-replace every `<PLACEHOLDER>` out of band. This is a guide, not an executable
-script; nothing here has been automatically deployed.
+password, JWT secret or keystore appears in this document.** The production
+backend hostname below is a **public URL, not a secret** (it is visible in
+every client bundle). This is a guide, not an executable script; no deployment
+was performed from this repository.
+
+> **Production backend (confirmed by the operator, verified live 2026-11-14):**
+> `https://bd-quickmart-backend.onrender.com`
+> - API base: `https://bd-quickmart-backend.onrender.com/api/v1`
+> - WebSocket: `wss://bd-quickmart-backend.onrender.com/ws/tracking`
+>
+> All three client applications and `vercel.json` are configured with this URL.
+> See section 0 for the actual live health state — **the backend is reachable
+> but its database is DOWN**, so end-to-end auth flows are not yet verifiable.
 
 ## Topology
 
@@ -12,12 +22,52 @@ script; nothing here has been automatically deployed.
 | Backend | Spring Boot 3.5.6 / Java 21 | **Render** Web Service (Docker) | `backend/Dockerfile`, `render.yaml`, `backend/src/main/resources/application.yml` |
 | Database | Supabase PostgreSQL (fresh) | **Supabase** | `backend/src/main/resources/db/migration/V1__init_auth_schema.sql` (Flyway) |
 | Admin web | React + TypeScript + Vite | **Vercel** | `admin-web/vercel.json`, `admin-web/.env.example` |
-| Customer app | Flutter Android | APK / Play internal testing | `customer-app/dart-defines/`, `app_config.dart` |
-| Rider app | Flutter Android | APK / Play internal testing | `rider-app/.env.example`, `app_config.dart` |
+| Customer app | Flutter Android | APK / Play internal testing | `customer-app/dart-defines/production.json.example`, `app_config.dart` |
+| Rider app | Flutter Android | APK / Play internal testing | `rider-app/dart-defines/production.json.example`, `app_config.dart` |
 | AI/ML | separate service (optional) | independent | `AI_ENABLED=false`; out of scope |
 
 Order: **Supabase → Render → Vercel → Flutter**. Vercel and the Flutter apps need
 the real Render HTTPS URL; Render needs the Supabase connection URI.
+
+---
+
+## 0. Verified live deployment status (2026-11-14)
+
+Probed directly against `https://bd-quickmart-backend.onrender.com` (Render
+free-tier cold start took ~59 s; subsequent calls were fast). Results are
+**observations, not claims of success**:
+
+| Probe | Result | Meaning |
+|---|---|---|
+| `GET /actuator/health/liveness` | `200` `{"status":"UP"}` | JVM/app process alive, deploy reachable |
+| `GET /api/v1/health` | `200`, `data.status=UP`, **`database: DOWN`** | HTTP layer works; DB probe times out |
+| `GET /actuator/health` | `503` `db: DOWN` | `CannotGetJdbcConnectionException` |
+| `GET /actuator/health/readiness` | `503` `db: DOWN` | Not ready to serve traffic |
+| `GET /v3/api-docs` | `200`, title **"BD QuickMart API"**, 13 paths | Confirms service identity |
+| `WSS /ws/tracking` handshake | **`101 Switching Protocols`** | WebSocket transport reachable |
+| CORS preflight from `vercel.app` origins | **`403`** | Admin origin not in allowlist |
+| OpenAPI `servers` | `http://localhost:8080` | `APP_PUBLIC_URL` stale |
+
+**Interpretation:** the Render service is deployed and reachable, but the
+Supabase database connection is failing — consistent with the rotated/rejected
+`SUPABASE_DATABASE_URL` password found earlier. Registration, login, refresh,
+logout, session restore, rider approval and role guards therefore **cannot be
+verified live** until the database is fixed. Local test suites pass (see
+`PROJECT_PROGRESS.md`) but that is **not** live E2E verification.
+
+**Exact operator actions still required** (all need Render/Supabase dashboard
+access — no cloud credentials were available here):
+
+1. Reset/confirm the Supabase DB password and update `SUPABASE_DATABASE_URL` on
+   Render, then apply the `V1` schema (section 2). Recheck readiness → `UP`.
+2. Set `APP_CORS_ALLOWED_ORIGINS` on Render to include the **exact Vercel
+   production origin** (currently only `http://localhost:5173` and
+   `http://localhost:3000` are allowed; wildcards are invalid because
+   `setAllowCredentials(true)` is used).
+3. Set `APP_PUBLIC_URL=https://bd-quickmart-backend.onrender.com` on Render so
+   the OpenAPI server list stops advertising `localhost:8080`.
+4. Deploy the admin web to Vercel (section 4) and re-run the section 7
+   checklist.
 
 ---
 
@@ -130,18 +180,32 @@ choosing a compute plan is a billing decision you make in the dashboard.
 2. `vercel.json` supplies: `framework: vite`, `installCommand: npm ci`,
    `buildCommand: npm run build`, `outputDirectory: dist`, SPA fallback
    rewrites (`/(.*)` → `/index.html`, so `/orders`, `/riders` deep links work),
-   and security headers (HSTS, nosniff, etc.).
-3. Set `VITE_*` variables in **Production** settings **before** the build —
-   they are baked into the JS bundle:
-   - `VITE_API_BASE_URL=https://<RENDER_HOST>/api/v1`
-   - `VITE_WS_BASE_URL=wss://<RENDER_HOST>/ws/tracking`
+   security headers (HSTS, nosniff, etc.), **and a top-level `env` block** with
+   the production `VITE_*` values so a deploy builds correctly out of the box:
+   - `VITE_API_BASE_URL=https://bd-quickmart-backend.onrender.com/api/v1`
+   - `VITE_WS_BASE_URL=wss://bd-quickmart-backend.onrender.com/ws/tracking`
    - `VITE_REQUEST_TIMEOUT=30000`
    - `VITE_IS_DEVELOPMENT=false`
+3. These can also/instead be set in Vercel **Production** environment variables
+   (dashboard values override `vercel.json`). They are baked into the JS
+   bundle at build time — changing one requires a redeploy. Verified locally:
+   `VITE_API_BASE_URL=https://bd-quickmart-backend.onrender.com/api/v1` and
+   `VITE_IS_DEVELOPMENT=false` are present in the built bundle; the
+   `localhost:8080` strings that remain are only dead `??` fallbacks.
+   A local production build:
+   ```bash
+   cd admin-web
+   VITE_API_BASE_URL=https://bd-quickmart-backend.onrender.com/api/v1 \
+   VITE_WS_BASE_URL=wss://bd-quickmart-backend.onrender.com/ws/tracking \
+   VITE_REQUEST_TIMEOUT=30000 VITE_IS_DEVELOPMENT=false \
+   npm run build
+   ```
 4. `VITE_*` values are **public** by definition. **Never** put `JWT_SECRET`,
    DB credentials or AI keys there.
-5. Add the Vercel origin to `APP_CORS_ALLOWED_ORIGINS` on Render.
+5. Add the exact Vercel origin to `APP_CORS_ALLOWED_ORIGINS` on Render.
    `WebConfig` uses `setAllowCredentials(true)` with an explicit origin list,
-   so `*` is invalid.
+   so `*` is invalid. **As of 2026-11-14 this is NOT done** — every
+   `vercel.app` origin returns `403` on preflight (see section 0).
 
 ---
 
@@ -156,18 +220,24 @@ build fails closed. **Never** ship `10.0.2.2`, a LAN IP or cleartext HTTP.
 # Customer
 cd customer-app
 flutter build apk --release \
-  --dart-define-from-file=dart-defines/production.json   # copy .example and set real URLs
+  --dart-define-from-file=dart-defines/production.json.example
 
 # Rider
 cd ../rider-app
 flutter build apk --release \
-  --dart-define=IS_DEVELOPMENT=false \
-  --dart-define=API_BASE_URL=https://<RENDER_HOST>/api/v1 \
-  --dart-define=WS_BASE_URL=wss://<RENDER_HOST>/ws/tracking
+  --dart-define-from-file=dart-defines/production.json.example
 ```
 
-- `production.json.example` uses `.invalid` placeholder hosts — replace them
-  with the real Render URL. It is a **template**, not a committed secret.
+- **Both apps' `dart-defines/production.json.example` files now contain the
+  confirmed production values** (`IS_DEVELOPMENT=false`, the HTTPS API URL and
+  the WSS URL). They are public config, not secrets — no keystore, password or
+  JWT is involved. `AppConfig` reads them at compile time; `ServerConfig`
+  inherits that value as its default (a runtime QA override may still replace
+  it per-device).
+- Verified in the built APKs: `bd-quickmart-backend.onrender.com` is present
+  and the fail-closed `.example.invalid` default is absent, i.e. the release
+  builds are genuinely production-wired. The `10.0.2.2` strings that remain
+  are dead debug-branch literals and login-screen hint text, not active URLs.
 - Release Android manifests omit `usesCleartextTraffic` (debug-only), so
   cleartext is correctly blocked.
 - **Release signing**: configure `android/app/build.gradle.kts` `signingConfigs`
@@ -202,10 +272,12 @@ Quick rules:
 
 ## 7. Post-deploy verification checklist
 
-- [ ] `GET https://<RENDER_HOST>/api/v1/health` → 200, `database: UP`.
-- [ ] `GET /actuator/health/readiness` → `UP`; liveness → `UP`.
+- [ ] `GET https://bd-quickmart-backend.onrender.com/api/v1/health` → 200,
+      **`database: UP`** (currently `database: DOWN` — see section 0).
+- [ ] `GET /actuator/health/readiness` → `UP`; liveness → `UP` (liveness is
+      already `UP`).
 - [ ] `/v3/api-docs` and `/swagger-ui.html` reachable; OpenAPI shows the real
-      Render URL (`APP_PUBLIC_URL`).
+      Render URL (`APP_PUBLIC_URL`) instead of `localhost:8080`.
 - [ ] Exactly one `SUPER_ADMIN` exists; `APP_BOOTSTRAP_ADMIN_ENABLED=false`.
 - [ ] Register `CUSTOMER` and `RIDER` (RIDER starts `PENDING`); login, refresh
       rotation, replay rejection, logout, `/me`.

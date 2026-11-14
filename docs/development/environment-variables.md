@@ -198,7 +198,28 @@ loads the page.
 
 ---
 
-## 5. Which base URL to use
+## 5. Production overrides (2026-11-15)
+
+The defaults above are **local development** values. The confirmed production
+backend is `https://bd-quickmart-backend.onrender.com` (public URL, not a
+secret). Production build values, already wired in this repository:
+
+| Variable | Production value |
+|---|---|
+| `API_BASE_URL` / `VITE_API_BASE_URL` | `https://bd-quickmart-backend.onrender.com/api/v1` |
+| `WS_BASE_URL` / `VITE_WS_BASE_URL` | `wss://bd-quickmart-backend.onrender.com/ws/tracking` |
+| `IS_DEVELOPMENT` / `VITE_IS_DEVELOPMENT` | `false` |
+| `APP_PUBLIC_URL` (Render) | `https://bd-quickmart-backend.onrender.com` |
+| `APP_CORS_ALLOWED_ORIGINS` (Render) | must include the exact Vercel origin (currently only localhost is allowed — see `DEPLOYMENT.md` §0) |
+
+Both Flutter apps ship these via
+`dart-defines/production.json.example` (`--dart-define-from-file`); the admin
+web ships them via `vercel.json`'s `env` block / Vercel dashboard. `.env` files
+remain git-ignored — never commit them or any secret.
+
+---
+
+## 6. Which base URL to use
 
 The three clients run in different places, so "localhost" means different
 things to each.
