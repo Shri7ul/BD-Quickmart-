@@ -20,10 +20,16 @@ import org.springframework.web.bind.annotation.RestController;
  * Liveness endpoint for the platform. Used by the three clients and by
  * deployment tooling to confirm the backend is reachable.
  *
+ * <p>This is the LIVENESS endpoint: it always returns HTTP 200 while the
+ * application is up, even when PostgreSQL is temporarily unavailable (the
+ * database status is reported in the body, never in the HTTP status). Use
+ * {@code /actuator/health/readiness} for readiness — that endpoint returns
+ * 503 when the database is unreachable.
+ *
  * <p>The database check is deliberately bounded: it opens a connection with a
  * short timeout of its own rather than borrowing the pool's, so that a
- * stopped MySQL cannot make this endpoint hang for the full pool timeout. A
- * health check that blocks is worse than one that reports the failure.
+ * stopped PostgreSQL cannot make this endpoint hang for the full pool
+ * timeout. A health check that blocks is worse than one that reports failure.
  */
 @RestController
 @RequestMapping("/api/v1/health")

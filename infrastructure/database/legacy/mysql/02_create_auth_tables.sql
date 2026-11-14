@@ -1,3 +1,10 @@
+-- #####################################################################
+-- LEGACY / HISTORICAL -- DO NOT RUN.
+-- MySQL 8 / XAMPP artifact from Goals 01-02. NOT the active schema path.
+-- Active schema: backend/src/main/resources/db/migration/V1__init_auth_schema.sql
+-- (Flyway, Supabase PostgreSQL). See README.md in this folder.
+-- #####################################################################
+
 -- =====================================================================
 -- BD QuickMart - Goal 02: authentication & role management schema
 -- =====================================================================

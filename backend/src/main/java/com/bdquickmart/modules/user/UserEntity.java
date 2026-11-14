@@ -18,11 +18,11 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 /**
  * A platform account.
  *
- * <p>Mapped to the {@code users} table created by
- * {@code infrastructure/database/init/02_create_auth_tables.sql}. The entity is
- * intentionally portable between MySQL 8 (production) and H2 in MySQL mode
- * (tests): it uses only standard JPA annotations and no MySQL-specific
- * {@code columnDefinition}, {@code UNSIGNED}, or {@code ON UPDATE} clauses.
+ * <p>Mapped to the {@code users} table created by the Flyway migration
+ * {@code V1__init_auth_schema.sql} on Supabase PostgreSQL. The entity is
+ * intentionally portable between PostgreSQL (production) and H2 in
+ * PostgreSQL compatibility mode (tests): it uses only standard JPA annotations
+ * and no vendor-specific {@code columnDefinition} or {@code ON UPDATE} clauses.
  */
 @Entity
 @Table(name = "users")

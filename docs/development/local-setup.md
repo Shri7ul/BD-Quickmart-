@@ -1,15 +1,18 @@
 # BD QuickMart — Local Setup Guide
 
 This guide takes a fresh machine from nothing to three running applications and
-a connected database.
+a connected **Supabase PostgreSQL** database.
 
-> **Assumed:** Windows 10/11, XAMPP installed, and the repository cloned.
+> **Assumed:** Windows 10/11, the repository cloned, and a Supabase project
+> (or a local PostgreSQL 16 instance) available. XAMPP/MySQL is **not** used —
+> see the [cloud migration plan](CLOUD_MIGRATION_PLAN.md).
 
 ---
 
 ## 0. Toolchain
 
-Goal 01 was developed and verified with the following versions.
+Goal 01 was developed and verified with the following versions; the database
+layer was migrated to PostgreSQL in the cloud-migration task.
 
 | Tool | Version | Install location used |
 |---|---|---|
@@ -18,7 +21,8 @@ Goal 01 was developed and verified with the following versions.
 | Flutter | 3.35.1 (Dart 3.9.0) | `C:\Users\USER\tools\flutter` |
 | Node.js | 22.22.2 | system install |
 | Android SDK | platforms 34 & 36, build-tools 34–36.1 | `C:\Users\USER\AppData\Local\Android\Sdk` |
-| MySQL | 8 | XAMPP (`C:\xampp`) |
+| PostgreSQL | 16 (Supabase) | managed cloud project |
+| Docker | optional | only for the real-PostgreSQL Testcontainers suite |
 
 If a tool is missing, install it and make sure `java`, `mvn`, `flutter` and
 `node` resolve on your `PATH`. For reference, a `PATH` setup looks like this:
@@ -37,81 +41,159 @@ Environment Variables*, then open a **new** terminal so they take effect.
 
 ---
 
-## 1. Database setup in XAMPP — developer task
+## 1. Database setup — Supabase PostgreSQL (developer task)
 
-**The backend does not create the database for you.** It is created and
-managed manually, so that no automated process touches your local MySQL
-instance.
+The database is **fresh**: no legacy MySQL data is migrated. The schema is
+owned by the versioned Flyway migration
 
-### Step 1 — Start MySQL
-
-Open the **XAMPP Control Panel** and click **Start** next to **MySQL**.
-
-The status must read *running*. If the port is already taken, see
-[Troubleshooting](#troubleshooting).
-
-### Step 2 — Create the database
-
-There are two ways. Either is fine.
-
-**Option A — phpMyAdmin (recommended)**
-
-1. In the XAMPP Control Panel, click **Admin** next to MySQL. This opens
-   `http://localhost/phpmyadmin`.
-2. Click the **SQL** tab in the top menu.
-3. Open `infrastructure/database/init/00_create_database.sql` in your editor
-   and copy its contents.
-4. Paste into the SQL editor and press **Go**.
-
-**Option B — MySQL command line**
-
-```bash
-"C:/xampp/mysql/bin/mysql.exe" -u root < infrastructure/database/init/00_create_database.sql
+```
+backend/src/main/resources/db/migration/V1__init_auth_schema.sql
 ```
 
-> If your XAMPP MySQL root account has a password, add `-p` and supply it.
-> This script only creates the `bd_quickmart` database. It does **not** drop,
-> truncate or modify any other database on the server, and it is safe to run
-> more than once.
+which creates `users` and `refresh_tokens` with their constraints and
+PostgreSQL-specific indexes. Migrations are applied as a **separate step**
+with dedicated DDL-capable credentials; the running application connects with
+a **least-privilege DML-only role** and has `spring.flyway.enabled=false` by
+default, so it never performs DDL at startup. Hibernate is pinned to
+`ddl-auto: none` (set `DB_DDL_AUTO=validate` in CI/staging to assert
+entity/schema alignment).
 
-### Step 3 — Import the Goal 02 auth tables
+> The original MySQL 8 / XAMPP scripts from Goals 01–02 were retained as a
+> historical reference under
+> [`infrastructure/database/legacy/mysql/`](../../infrastructure/database/legacy/mysql/README.md).
+> They are **not** an active schema path and must not be run against
+> PostgreSQL.
 
-Goal 02 adds two tables. Run
-`infrastructure/database/init/02_create_auth_tables.sql` through the phpMyAdmin
-**SQL** tab (or the CLI, as in Option B above). It creates `users` and
-`refresh_tokens` with `CREATE TABLE IF NOT EXISTS`, unique indexes, a foreign
-key, InnoDB and `utf8mb4_unicode_ci`. It contains no `DROP`, `TRUNCATE` or
-`DELETE` and is safe to run repeatedly.
+### Step 1 — Create the Supabase project
 
-**The backend cannot serve auth requests until this script has been run.**
-Hibernate is pinned to `ddl-auto: none` and will not create the tables for you.
+1. Create a **fresh** Supabase project. No existing data is imported.
+2. Choose the region closest to the Bangladesh user base (region cannot be
+   changed later without a project migration); keep the backend host nearby.
+3. Confirm the database encoding is `UTF8` (Supabase default) so Bangla script
+   and emoji are stored correctly.
+4. Record the project reference, hosts and generated database password in the
+   team secret store. **Never commit them.**
+5. Enable backups / Point-in-Time Recovery on the chosen plan.
 
-> **On this machine (verified 2026-11-12):** `users` and `refresh_tokens`
-> already exist in `bd_quickmart` and were verified against this migration.
-> **Do not re-import** the script onto this database — it is
-> `CREATE TABLE IF NOT EXISTS`, so a repeat is harmless but unnecessary. Step 3
-> is only needed when setting up a fresh MySQL instance.
+### Step 2 — Choose the connection string
 
-### Step 4 — Verify
+| Connection | Port | Use for |
+|---|---|---|
+| **Session Pooler** | 5432 | The running Spring Boot app (recommended) — preserves session state, compatible with Hikari and `FOR UPDATE` |
+| **Direct** (`db.<ref>.supabase.co`) | 5432 | **Migrations** and admin tasks |
+| Transaction Pooler | 6543 | **Avoid** — breaks session state, prepared statements and pessimistic locking |
 
-Run `infrastructure/database/init/01_verify_connection.sql` and then
-`infrastructure/database/init/03_verify_auth_tables.sql` the same way. You
-expect to see:
+Supabase enforces TLS: every connection string must use `sslmode=require`
+(or `verify-full` with the CA mounted in the host's trust store). Because
+`RefreshTokenRepository` uses `@Lock(PESSIMISTIC_WRITE)` for rotation, never
+use the transaction-mode pooler for the application. Keep Hikari small
+(`DB_POOL_MAX_SIZE` ~5–10) to respect Supabase connection limits.
 
-- `current_database` = `bd_quickmart`
-- `charset` = `utf8mb4`
-- `collation` = `utf8mb4_unicode_ci`
-- `03_verify_auth_tables.sql` returns exactly two rows: `refresh_tokens` and
-  `users`, both `InnoDB` / `utf8mb4_unicode_ci`
-- all expected indexes, unique keys and the `fk_refresh_user` foreign key
+### Step 3 — Create the two roles (names only, no secrets)
 
-`03_verify_auth_tables.sql` is entirely read-only (`information_schema`
-`SELECT`s) and safe to run repeatedly. On 2026-11-12 it was executed against
-this machine's MySQL and returned exactly the layout described in
-[docs/database/schema.md](../database/schema.md). On a database where the
-script has **not** been imported, the table list is empty — that was the
-pre-import state. If you see tables you did not create, stop and check which
-script was run.
+Run as an administrator in the Supabase SQL editor. Do **not** connect the app
+as the `postgres` superuser. Placeholders in `<ANGLE_BRACKETS>`:
+
+```sql
+-- Least-privilege RUNTIME role: DML only, no DDL, no superuser.
+CREATE ROLE <DB_APP_ROLE> LOGIN PASSWORD '<DB_APP_PASSWORD>';
+GRANT USAGE ON SCHEMA public TO <DB_APP_ROLE>;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO <DB_APP_ROLE>;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO <DB_APP_ROLE>;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO <DB_APP_ROLE>;
+
+-- Separate DDL-capable MIGRATION role, used ONLY during deploys.
+CREATE ROLE <DB_MIGRATION_ROLE> LOGIN PASSWORD '<DB_MIGRATION_PASSWORD>';
+GRANT ALL ON SCHEMA public TO <DB_MIGRATION_ROLE>;
+```
+
+`GRANT ... ON ALL TABLES` applies to objects that already exist, and
+`ALTER DEFAULT PRIVILEGES` applies to future objects created by the role that
+runs it. After each new migration, either refresh the runtime grants or set the
+default privileges on the **migrating** role so new tables are covered.
+Confirm `PUBLIC` cannot `CREATE` in the `public` schema, and enable RLS only
+if client-side Supabase data access is ever introduced (the current
+architecture is backend-only).
+
+### Step 4 — Apply the Flyway migration (separate step)
+
+The `flyway-maven-plugin` is deliberately **not** bound to any lifecycle
+phase, so the migration runs only when explicitly invoked. From `backend/`,
+using the **direct** connection and the migration role:
+
+```bash
+cd backend
+mvn -B flyway:migrate \
+  -Dflyway.url="$DB_MIGRATION_URL" \
+  -Dflyway.user="$DB_MIGRATION_USERNAME" \
+  -Dflyway.password="$DB_MIGRATION_PASSWORD"
+```
+
+`DB_MIGRATION_URL` is a JDBC URL such as
+`jdbc:postgresql://db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require`
+(no real credential is shown). Useful companion goals:
+
+```bash
+mvn -B flyway:info     -Dflyway.url="$DB_MIGRATION_URL" -Dflyway.user="$DB_MIGRATION_USERNAME" -Dflyway.password="$DB_MIGRATION_PASSWORD"
+mvn -B flyway:validate -Dflyway.url="$DB_MIGRATION_URL" -Dflyway.user="$DB_MIGRATION_USERNAME" -Dflyway.password="$DB_MIGRATION_PASSWORD"
+```
+
+Flyway records the applied version in `flyway_schema_history` and serialises
+concurrent migrators with its own lock. Migrations are **forward-only**: a
+correction is a new `V2__...sql`, never a destructive edit to a live schema.
+Optional alternative: set `SPRING_FLYWAY_ENABLED=true` together with all three
+`DB_MIGRATION_*` variables so the app migrates at startup — but the
+recommended production sequence is migration step → deploy → health check.
+
+### Step 5 — Configure the runtime environment
+
+Set these in the root `.env` (see
+[environment-variables.md](environment-variables.md)) — names only, no real
+secrets:
+
+```bash
+DB_URL=jdbc:postgresql://<POOLER_HOST>:5432/postgres?sslmode=require
+DB_USERNAME=<DB_APP_ROLE>
+DB_PASSWORD=<DB_APP_PASSWORD>
+DB_DRIVER=org.postgresql.Driver
+DB_DIALECT=org.hibernate.dialect.PostgreSQLDialect
+DB_DDL_AUTO=validate        # none is also safe; use validate in CI/staging
+```
+
+For a Render deployment, `PORT` is injected by the platform and the app binds
+via `server.port: ${PORT:${SERVER_PORT:8080}}`; set `APP_PUBLIC_URL` to the
+real public backend URL so OpenAPI advertises it, and add the Vercel origin to
+`APP_CORS_ALLOWED_ORIGINS`. The three `DB_MIGRATION_*` variables belong only
+to the migration step / CI secret store, never to the long-running app.
+
+### Step 6 — Verify (all read-only)
+
+```sql
+select version, description, success from flyway_schema_history order by installed_rank;  -- one V1 row, success=true
+select tablename from pg_tables where schemaname='public' order by tablename;           -- users, refresh_tokens
+select indexname, indexdef from pg_indexes where schemaname='public' order by indexname;
+```
+
+Then start the backend and check the probes:
+
+| Endpoint | Meaning |
+|---|---|
+| `GET /api/v1/health` | Liveness — always 200 while the app is up; never fails on a DB outage |
+| `GET /actuator/health/liveness` | Liveness (`livenessState` only; the `db` indicator is deliberately excluded) |
+| `GET /actuator/health/readiness` | Readiness (`readinessState` + `db`); returns **503** when PostgreSQL is down |
+
+Readiness must report `db: UP` only after Step 4 has succeeded. The fast test
+suite (`cd backend && mvn -B clean verify`) uses H2 in `MODE=PostgreSQL` and
+needs no database; `PostgresMigrationIntegrationTest` applies the real V1
+migration to a PostgreSQL Testcontainers instance and is **skipped
+automatically when Docker is unavailable** — run it in CI for genuine
+PostgreSQL evidence (never report a skipped run as a passed one).
+
+> Historical note: the Goal 02 verification evidence in
+> [`docs/progress.md`](../progress.md) was produced against the old local
+> MySQL 8 instance. That baseline is superseded by this fresh PostgreSQL
+> schema; no MySQL data was carried over.
 
 ---
 
@@ -126,13 +208,21 @@ cp .env.example .env
 Then edit `.env` and set at least:
 
 ```bash
-DB_URL=jdbc:mysql://localhost:3306/bd_quickmart?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Dhaka&characterEncoding=UTF-8
-DB_USERNAME=root
-DB_PASSWORD=              # your XAMPP root password, if any
+DB_URL=jdbc:postgresql://<POOLER_HOST>:5432/postgres?sslmode=require
+DB_USERNAME=<DB_APP_ROLE>
+DB_PASSWORD=<DB_APP_PASSWORD>
+DB_DRIVER=org.postgresql.Driver
+DB_DIALECT=org.hibernate.dialect.PostgreSQLDialect
+DB_DDL_AUTO=validate
 
 # Goal 02 — generate a >=32-byte secret, e.g. `openssl rand -base64 48`
 JWT_SECRET=<paste-generated-secret-here>
 ```
+
+Use the **Session Pooler** connection for the running app and the
+least-privilege runtime role — never the `postgres` superuser. The
+`DB_MIGRATION_*` credentials belong only to the separate Flyway step
+(§1 Step 4), not to the running application.
 
 `.env` is git-ignored and must never be committed. Leaving `JWT_SECRET` blank
 makes the backend **refuse to start** (outside `dev`/`test`) rather than
@@ -189,11 +279,13 @@ APP_BOOTSTRAP_ADMIN_PHONE=...
 ```
 
 …then set `APP_BOOTSTRAP_ADMIN_ENABLED=false` again immediately after the first
-successful start. Or insert a `SUPER_ADMIN` row manually with a BCrypt hash,
-using the commented template in
-`infrastructure/database/init/04_admin_bootstrap_TEMPLATE.sql`. The runner
-skips creation when a `SUPER_ADMIN` already exists and never logs the
-password.
+successful start. The runner re-checks for an existing `SUPER_ADMIN` inside a
+transaction and relies on the unique constraints, so concurrent startup
+cannot create duplicate administrators; it never logs the password. A
+commented, non-runnable SQL template for the old MySQL schema is kept only
+as a historical reference at
+`infrastructure/database/legacy/mysql/04_admin_bootstrap_TEMPLATE.sql` — the
+environment-variable runner above is the supported path.
 
 > **Verified on this machine (2026-11-12):** the opt-in runner was used once;
 > exactly one `SUPER_ADMIN` (`ACTIVE`) exists, successfully logged in and
@@ -265,7 +357,7 @@ java -jar target/bd-quickmart-backend-0.1.0.jar
 curl http://localhost:8080/api/v1/health
 ```
 
-Expected response when MySQL is running:
+Expected response when PostgreSQL is reachable:
 
 ```json
 {
@@ -283,16 +375,19 @@ Expected response when MySQL is running:
 ```
 
 > **If `database` reads `DOWN`:** the backend is running correctly but cannot
-> reach MySQL. Check that MySQL is started in XAMPP and that `DB_URL`,
-> `DB_USERNAME` and `DB_PASSWORD` are correct. The backend deliberately
-> starts even when the database is down, so that you can diagnose the problem
-> from the health endpoint instead of from a stack trace. The check is
-> bounded to 2 seconds, so the endpoint never hangs.
+> reach PostgreSQL. Check the Supabase project is active, that the connection
+> string uses `sslmode=require`, that the Session Pooler host/port is correct,
+> and that `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` match the runtime role.
+> `/api/v1/health` is **liveness** — it stays HTTP 200 during a DB outage so
+> the platform does not restart a healthy process; use
+> `/actuator/health/readiness` for the DB-aware readiness probe (it returns
+> 503 while the database is unreachable). The check is bounded to 2 seconds,
+> so the endpoint never hangs.
 
 ### Verify authentication (Goal 02)
 
-With `02_create_auth_tables.sql` imported and `JWT_SECRET` set, register and
-log in from the command line:
+With the Flyway `V1__init_auth_schema.sql` migration applied (§1 Step 4) and
+`JWT_SECRET` set, register and log in from the command line:
 
 ```bash
 # Public registration (CUSTOMER or RIDER only)
@@ -313,9 +408,13 @@ registration returns `status: PENDING`; it can log in but cannot reach
 `/api/v1/rider/**` until an `ADMIN`/`SUPER_ADMIN` approves it via
 `POST /api/v1/admin/riders/{publicId}/approve`.
 
-The tests cover this flow end-to-end against an in-memory H2 database
-(`cd backend && mvn -B clean verify`), so the backend does not need MySQL
-running to be verified.
+The fast application-level tests cover this flow end-to-end against an
+in-memory H2 database in `MODE=PostgreSQL` (`cd backend && mvn -B clean
+verify`), so no running database is needed. H2 is **not** a substitute for
+real PostgreSQL: `PostgresMigrationIntegrationTest` applies the actual Flyway
+V1 migration to a PostgreSQL Testcontainers instance and is skipped
+automatically when Docker is unavailable — run it in CI for genuine
+PostgreSQL evidence, and never report a skipped run as passed.
 
 ### Swagger UI
 
@@ -499,6 +598,13 @@ has no test runner and is verified via lint + production build. The freshly
 rebuilt APKs were byte-identical to the delivery copies below, so the recorded
 SHA-256 hashes did not change.
 
+> **Post-migration note:** the table above is the dated Goal 02 baseline, kept
+> verbatim. After the MySQL → Supabase PostgreSQL migration the backend suite
+> grew to **44 tests** (`Tests run: 44, Failures: 0, Errors: 0`), of which 9
+> real-PostgreSQL Testcontainers tests skip cleanly when Docker is unavailable
+> (35 execute and pass). Those skipped tests are **not** reported as passed;
+> run them in CI with Docker for genuine PostgreSQL evidence.
+
 ### Verified installable debug APKs
 
 Final delivery copies (git-ignored, **not** committed):
@@ -546,8 +652,9 @@ include `$JAVA_HOME/bin`. Open a new terminal after changing it.
 
 **Backend fails with `Unable to determine Dialect without JDBC metadata`** —
 this happens when the dialect is not pinned. The repository pins
-`DB_DIALECT=org.hibernate.dialect.MySQLDialect`; confirm your local
-`application.yml` still contains it.
+`DB_DIALECT=org.hibernate.dialect.PostgreSQLDialect`; confirm your local
+`application.yml` still contains it. (The old `DB_DIALECT_VERSION` MySQL
+workaround has been removed.)
 
 **Backend refuses to start with `JWT_SECRET is not configured`** — Goal 02
 fails fast rather than signing tokens with a weak or hardcoded key. Generate a
@@ -564,10 +671,12 @@ startup. Start with `.\start-backend.ps1` from the repository root instead
 enabling `JWT_ALLOW_EPHEMERAL_DEV_KEY` — that only masks the missing
 configuration and invalidates every token on restart.
 
-**Auth endpoints return 500 / "Table 'bd_quickmart.users' doesn't exist"** —
-`02_create_auth_tables.sql` has not been imported yet. Hibernate is pinned to
-`ddl-auto: none` and will not create the tables. Run the script in phpMyAdmin
-(see Step 3) and restart the backend.
+**Auth endpoints return 500 / "relation \"users\" does not exist"** — the
+Flyway migration has not been applied yet. The running application has
+`spring.flyway.enabled=false` and `ddl-auto: none`, so it will **not** create
+tables at startup. Run the separate migration step (§1 Step 4) against the
+Supabase **direct** connection with the DDL-capable migration role, then
+confirm with `select * from flyway_schema_history;` and restart the backend.
 
 **A new RIDER can log in but cannot open rider screens** — rider accounts
 start `PENDING` and only `ACTIVE` riders receive the `PERM_RIDER_ACTIVE`
@@ -575,33 +684,30 @@ authority. Approve the account as an `ADMIN`/`SUPER_ADMIN` via
 `POST /api/v1/admin/riders/{publicId}/approve`, then use "Check approval
 status" in the app (a token rotation picks up the new status).
 
-**Backend starts but health reports `database: DOWN`** — MySQL is not running
-or the credentials are wrong. Re-check Step 1 and Step 2 above. The check is
-bounded to 2 seconds, so a `DOWN` result arrives quickly rather than hanging.
+**Backend starts but health reports `database: DOWN`** — PostgreSQL is
+unreachable or the credentials are wrong. Re-check the Supabase project is
+active, the connection string uses `sslmode=require`, the Session Pooler
+host/port is correct, and that `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` match
+the runtime role (§1 Steps 2, 3 and 5). The probe is bounded to 2 seconds,
+so a `DOWN` result arrives quickly rather than hanging. `/api/v1/health`
+stays HTTP 200 during a DB outage by design; `/actuator/health/readiness`
+returns 503 until the database is reachable.
 
-**MySQL stopped unexpectedly** — the XAMPP MySQL service can stop between
-sessions. Confirm whether it is running:
+**Cannot connect to Supabase PostgreSQL** — confirm the project is not paused,
+that you are using the **Session Pooler** (port 5432) for the running app and
+the **direct** connection (port 5432, `db.<ref>.supabase.co`) for migrations,
+and that `sslmode=require` is present. Avoid the transaction-mode pooler
+(port 6543): it breaks session state and the `SELECT ... FOR UPDATE`
+pessimistic locking used by refresh-token rotation. Verify reachability from
+the host:
 
 ```powershell
-Get-NetTCPConnection -LocalPort 3306 -State Listen -ErrorAction SilentlyContinue
-Get-Process mysqld -ErrorAction SilentlyContinue
+Test-NetConnection <POOLER_HOST> -Port 5432
 ```
 
-If both come back empty, restart it from the XAMPP Control Panel. To start
-`mysqld` directly from a terminal instead, note that the defaults file lives
-in the **bin** directory, not the `mysql` directory:
-
-```bash
-"C:/xampp/mysql/bin/mysqld.exe" --defaults-file="C:/xampp/mysql/bin/my.ini"
-```
-
-Using `C:/xampp/mysql/my.ini` fails with
-`Could not open required defaults file`.
-
-**`Port 3306 is already in use`** — another MySQL instance is running. Either
-stop it, or set `DB_URL` to the port your instance uses. To find the
-occupying process on Windows: `netstat -ano | findstr 3306`, then look up the
-PID in Task Manager.
+If the connection is refused, check the Supabase dashboard, network egress and
+any IP allow-list rather than restarting a local service — the database is a
+managed cloud project, not a local `mysqld` process.
 
 **WebSocket handshake returns `403`** — the security filter chain is
 intercepting the upgrade request before the WebSocket handler sees it. The

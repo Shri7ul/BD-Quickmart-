@@ -1,0 +1,133 @@
+# =====================================================================
+# BD QuickMart - Render Blueprint (backend only)
+# ---------------------------------------------------------------------
+# Field names follow https://render.com/docs/blueprint-spec.
+# Render's Blueprint spec has NO native `java` runtime (only node, python,
+# ruby, go, elixir, rust, docker, image, static), so the backend is deployed
+# as `runtime: docker` with backend/Dockerfile. That Dockerfile is what pins
+# Java 21 + Maven 3.9.9 and produces the executable jar.
+#
+# This file contains NAMES ONLY. No secret values, no real hostnames, and no
+# invented deployment URLs. `sync: false` entries are prompted in the Render
+# dashboard at initial Blueprint creation (or set manually afterwards).
+#
+# IMPORTANT: Render prompts for `sync: false` values ONLY on initial creation.
+# When updating an existing Blueprint, add/rotate these manually in the
+# dashboard. Preview environments do NOT inherit `sync: false` variables.
+#
+# `plan` is deliberately omitted: choosing a compute plan may create a paid
+# resource and must be your explicit decision in the Render dashboard.
+# =====================================================================
+
+services:
+  - type: web
+    name: bd-quickmart-backend
+    runtime: docker
+    branch: main
+
+    # Monorepo: only changes under backend/ trigger a rebuild.
+    rootDir: backend
+    # dockerfilePath / dockerContext are relative to the REPO ROOT (not rootDir).
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+
+    # Choose the region closest to the Bangladesh user base. Valid Render
+    # regions: oregon, ohio, virginia, frankfurt, singapore. Cannot be
+    # changed after creation - confirm before creating the service.
+    region: singapore
+
+    # Liveness only. MUST NOT be the readiness endpoint: readiness returns 503
+    # when Supabase is unavailable, which would cause Render restart loops
+    # during a transient DB outage. Readiness (/actuator/health/readiness) is
+    # for monitoring, not for the platform health check.
+    healthCheckPath: /actuator/health/liveness
+
+    envVars:
+      # ---- Runtime database (least-privilege DML-only role) -------------
+      # RECOMMENDED: paste the COMPLETE Supabase Session Pooler URI as ONE
+      # secret. The backend parses it (URL-encoded password included) and
+      # enforces sslmode=require. When set, it OVERRIDES DB_URL / DB_USERNAME /
+      # DB_PASSWORD / DB_DIALECT below, so those split values can be left unset.
+      # Choose ONE of: SUPABASE_DATABASE_URL  OR  the DB_* split variables.
+      - key: SUPABASE_DATABASE_URL
+        sync: false
+      # ---- Alternative: split DB_* variables (used only when the URI is unset)
+      # Supabase Session Pooler JDBC URL with ?sslmode=require, e.g.
+      # jdbc:postgresql://<POOLER_HOST>:5432/postgres?sslmode=require
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_DRIVER
+        value: org.postgresql.Driver
+      - key: DB_DIALECT
+        value: org.hibernate.dialect.PostgreSQLDialect
+      # Flyway owns the schema. Never let Hibernate create/alter tables.
+      - key: DB_DDL_AUTO
+        value: none
+      - key: DB_POOL_MAX_SIZE
+        value: "5"
+      - key: DB_POOL_MIN_IDLE
+        value: "1"
+      - key: DB_POOL_CONNECTION_TIMEOUT
+        value: "5000"
+      - key: DB_POOL_INIT_FAIL_TIMEOUT
+        value: "-1"
+      - key: DB_SHOW_SQL
+        value: "false"
+
+      # ---- Flyway: migrations are a SEPARATE deploy step ----------------
+      # NEVER enable in the runtime service. DB_MIGRATION_* credentials
+      # belong to a DDL-capable migration role and must NOT be set here.
+      - key: SPRING_FLYWAY_ENABLED
+        value: "false"
+
+      # ---- Server / deployment -----------------------------------------
+      # Render injects PORT automatically. DO NOT set PORT here; leave it
+      # unset so the app binds via ${PORT:${SERVER_PORT:8080}}.
+      - key: APP_PUBLIC_URL
+        sync: false
+
+      # ---- CORS ---------------------------------------------------------
+      # Exact Vercel production origin(s), comma-separated. Wildcards are
+      # invalid because WebConfig uses setAllowCredentials(true). No URL is
+      # invented here - supply the real origin after Vercel is deployed.
+      - key: APP_CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # ---- JWT ----------------------------------------------------------
+      # >= 32 bytes, generate locally: openssl rand -base64 48
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_ISSUER
+        value: bd-quickmart-backend
+      - key: JWT_ACCESS_EXPIRATION
+        value: "900"
+      - key: JWT_REFRESH_EXPIRATION
+        value: "604800"
+      - key: JWT_ALLOW_EPHEMERAL_DEV_KEY
+        value: "false"
+
+      # ---- API / logging / AI -------------------------------------------
+      - key: APP_API_VERSION
+        value: v1
+      - key: APP_API_BASE_PATH
+        value: /api
+      - key: LOG_LEVEL_BACKEND
+        value: INFO
+      - key: LOG_LEVEL_SQL
+        value: INFO
+      # AI/ML is a separate future service. It MUST stay disabled; the
+      # platform is fully functional with it off (acceptance gate).
+      - key: AI_ENABLED
+        value: "false"
+
+      # ---- NOT set here (intentionally) ---------------------------------
+      # PORT                      - injected by Render
+      # DB_MIGRATION_URL / _USERNAME / _PASSWORD - migration step only
+      # GEMINI_API_KEY / GROQ_API_KEY             - optional, AI service scope
+      # APP_BOOTSTRAP_ADMIN_*                    - one-off SUPER_ADMIN setup,
+      #                                            disable immediately after
+      # SERVER_PORT                             - local default only

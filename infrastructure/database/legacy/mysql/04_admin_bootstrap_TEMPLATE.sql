@@ -1,3 +1,11 @@
+-- #####################################################################
+-- LEGACY / HISTORICAL -- DO NOT RUN.
+-- MySQL 8 / XAMPP artifact from Goals 01-02. NOT the active schema path.
+-- Active schema: backend/src/main/resources/db/migration/V1__init_auth_schema.sql
+-- (Flyway, Supabase PostgreSQL). Use APP_BOOTSTRAP_ADMIN_* instead of this
+-- template. See README.md in this folder.
+-- #####################################################################
+
 -- =====================================================================
 -- BD QuickMart - Goal 02: first-admin bootstrap TEMPLATE
 -- =====================================================================

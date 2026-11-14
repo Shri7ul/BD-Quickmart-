@@ -9,7 +9,7 @@ Three client applications, one centralized Java Spring Boot backend.
 | **Customer App** | Flutter (Android, iOS) | Browse, search, order, live tracking |
 | **Rider App** | Flutter (Android, iOS) | Accept deliveries, navigate routes, earnings |
 | **Admin Web** | React + TypeScript (Vite) | Store operations, inventory, dispatch, analytics |
-| **Backend** | Java 21 + Spring Boot 3.5 | REST API `/api/v1`, WebSocket, JPA/MySQL |
+| **Backend** | Java 21 + Spring Boot 3.5 | REST API `/api/v1`, WebSocket, JPA/PostgreSQL (Supabase) |
 
 ---
 
@@ -24,7 +24,7 @@ No microservices, no Kubernetes, no message broker. See
 [docs/architecture/system-overview.md](docs/architecture/system-overview.md).
 
 ```
-customer-app/  rider-app/  admin-web/  ──HTTP/WS──▶  backend/  ──JDBC──▶  MySQL 8
+customer-app/  rider-app/  admin-web/  ──HTTP/WS──▶  backend/  ──JDBC──▶  Supabase PostgreSQL
 ```
 
 ---
@@ -51,21 +51,36 @@ Each application is independently runnable and independently buildable.
 
 Full instructions: **[docs/development/local-setup.md](docs/development/local-setup.md)**
 
-### 1. Database (developer task, in XAMPP)
+### 1. Database (developer task, Supabase PostgreSQL)
 
-Start MySQL from the XAMPP Control Panel, then open
-<http://localhost/phpmyadmin> → **SQL** tab and run these scripts in order:
+The active database is a **fresh Supabase PostgreSQL** project. No MySQL data is
+migrated. The schema is owned by the versioned Flyway migration
 
-1. `infrastructure/database/init/00_create_database.sql` — creates
-   `bd_quickmart` with `utf8mb4` / `utf8mb4_unicode_ci`.
-2. `infrastructure/database/init/02_create_auth_tables.sql` — creates the
-   `users` and `refresh_tokens` tables (Goal 02).
-3. `infrastructure/database/init/03_verify_auth_tables.sql` — read-only check
-   that both tables exist with the expected engine and collation.
+```
+backend/src/main/resources/db/migration/V1__init_auth_schema.sql
+```
 
-**The repository never creates or modifies a database for you.** It ships the
-scripts and the documentation; you run them. The scripts use
-`CREATE TABLE IF NOT EXISTS` and contain no `DROP`, `TRUNCATE` or `DELETE`.
+Apply it once as a **separate step** with dedicated, DDL-capable credentials
+(the running application uses a least-privilege DML-only role and never runs
+Flyway at startup):
+
+```bash
+cd backend
+mvn -B flyway:migrate \
+  -Dflyway.url="$DB_MIGRATION_URL" \
+  -Dflyway.user="$DB_MIGRATION_USERNAME" \
+  -Dflyway.password="$DB_MIGRATION_PASSWORD"
+```
+
+See [docs/development/local-setup.md](docs/development/local-setup.md#1-database-setup--supabase-postgresql-developer-task)
+for creating the project, the two database roles, the connection strings
+(Session Pooler vs direct), TLS, and read-only verification queries.
+
+> The original MySQL 8 / XAMPP scripts from Goals 01–02 were retained as a
+> **historical reference only** under
+> [`infrastructure/database/legacy/mysql/`](infrastructure/database/legacy/mysql/README.md).
+> They are **not** an active schema path and must not be run against
+> PostgreSQL.
 
 ### 2. Environment
 
@@ -76,8 +91,10 @@ cp rider-app/.env.example rider-app/.env
 cp admin-web/.env.example admin-web/.env
 ```
 
-Set `DB_USERNAME` / `DB_PASSWORD` in the root `.env` to match your XAMPP MySQL
-account, and generate a JWT signing secret (at least 32 bytes):
+Set `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` in the root `.env` to point at your
+Supabase PostgreSQL database using the **least-privilege runtime role** (never
+the `postgres` superuser), and generate a JWT signing secret (at least 32
+bytes):
 
 ```bash
 openssl rand -base64 48
@@ -102,8 +119,13 @@ APP_BOOTSTRAP_ADMIN_PHONE=...
 ```
 
 Start the backend once, then set `APP_BOOTSTRAP_ADMIN_ENABLED=false` again.
-Alternatively, insert a `SUPER_ADMIN` row manually with a BCrypt hash — see
-`infrastructure/database/init/04_admin_bootstrap_TEMPLATE.sql`.
+The runner is concurrency-safe (it re-checks for an existing `SUPER_ADMIN`
+inside a transaction and relies on the unique constraints), so duplicate
+administrators cannot be created under concurrent startup. A commented,
+non-runnable SQL template for the old MySQL schema is kept only as a
+historical reference at
+`infrastructure/database/legacy/mysql/04_admin_bootstrap_TEMPLATE.sql` — the
+environment-variable runner above is the supported path.
 
 ### 4. Run
 
@@ -148,7 +170,7 @@ HTTP cleartext to that host; release builds keep cleartext disabled.
 
 | Check | Command | Expected |
 |---|---|---|
-| Backend tests | `cd backend && mvn -B clean verify` | `Tests run: 27, Failures: 0, Errors: 0` |
+| Backend tests | `cd backend && mvn -B clean verify` | `Tests run: 44, Failures: 0, Errors: 0` (`9` real-PostgreSQL Testcontainers tests skip when Docker is unavailable) |
 | Backend package | `cd backend && mvn -B package` | `BUILD SUCCESS` |
 | Health endpoint | `curl http://localhost:8080/api/v1/health` | `"success": true` |
 | Swagger UI | <http://localhost:8080/swagger-ui.html> | HTTP 200 |
@@ -238,7 +260,7 @@ account).
 |---|---|
 | [docs/architecture/system-overview.md](docs/architecture/system-overview.md) | Architecture, module boundaries, API conventions |
 | [docs/architecture/technology-stack.md](docs/architecture/technology-stack.md) | Exact versions, rationale, constraints |
-| [docs/development/local-setup.md](docs/development/local-setup.md) | Toolchain, XAMPP database setup, troubleshooting |
+| [docs/development/local-setup.md](docs/development/local-setup.md) | Toolchain, Supabase PostgreSQL setup, Flyway migrations, troubleshooting |
 | [docs/development/environment-variables.md](docs/development/environment-variables.md) | Every environment variable |
 | [docs/database/schema.md](docs/database/schema.md) | Database configuration and schema |
 | [docs/progress.md](docs/progress.md) | Goal-by-goal status and verification evidence |
@@ -275,6 +297,14 @@ fail-safe startup, the first `SUPER_ADMIN` was bootstrapped (and the bootstrap
 disabled again), and 64 live HTTP checks against real MySQL passed in addition
 to the 57 automated tests. See [docs/progress.md](docs/progress.md) for the
 full evidence.
+
+> **Database migration (post-Goal-02):** the active database has since been
+> migrated to a **fresh Supabase PostgreSQL** schema owned by Flyway
+> (`V1__init_auth_schema.sql`). No MySQL data was carried over. The MySQL
+> evidence above is a historical, pre-migration baseline preserved for
+> accuracy; the current runtime configuration contains no MySQL dependency.
+> See [docs/development/CLOUD_MIGRATION_PLAN.md](docs/development/CLOUD_MIGRATION_PLAN.md)
+> and [docs/development/local-setup.md](docs/development/local-setup.md).
 
 Known limitations are recorded honestly in
 [docs/progress.md](docs/progress.md) — notably that **no device/emulator was

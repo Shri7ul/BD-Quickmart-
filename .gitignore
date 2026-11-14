@@ -103,7 +103,10 @@ installers/
 **/android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 **/android/key.properties
+# Android release signing material is secret anywhere in the tree.
+key.properties
 *.jks
+*.keystore
 
 # iOS/XCode related
 **/ios/**/*.mode1v3

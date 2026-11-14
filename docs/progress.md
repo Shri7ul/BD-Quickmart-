@@ -966,3 +966,46 @@ before the push). No Goal 03 work was started.
 | 2026-11-12 | Both Flutter apps re-verified and rebuilt; `installers/` delivery APKs with sizes + SHA-256; no secrets embedded |
 | 2026-11-12 | Admin web `npm install`/lint/build clean; HttpOnly-cookie migration evaluated and deferred with documented trade-off |
 | 2026-11-12 | Six-role consistency + final security audit passed; status kept `READY_FOR_REVIEW` |
+
+---
+
+## Database migration — MySQL → Supabase PostgreSQL (post-Goal-02)
+
+> **Scope note.** This is a separate, approved implementation task performed
+> after Goal 02 finalization. It does **not** change Goal 02's status
+> (`READY_FOR_REVIEW`) and does **not** re-run or invalidate any Goal 01 / 02
+> verification above. All MySQL references in the Goal 01 and Goal 02 sections
+> are a **historical, pre-migration baseline** recorded verbatim for accuracy;
+> they describe what was actually tested on those dates, before the database
+> was migrated.
+
+**What changed:** the backend's active runtime was switched from MySQL 8 /
+XAMPP to a **fresh Supabase PostgreSQL 16** database. No MySQL data was
+migrated. The schema is now owned by a versioned Flyway migration
+(`backend/src/main/resources/db/migration/V1__init_auth_schema.sql`) applied
+as a **separate step** by a DDL-capable role; the running application uses a
+least-privilege DML-only role with `spring.flyway.enabled=false` and
+`ddl-auto: none`. The original MySQL scripts were relocated to
+`infrastructure/database/legacy/mysql/` and marked HISTORICAL / DO NOT RUN,
+so no conflicting schema initialization path remains.
+
+Also implemented: Render `PORT` wiring (`server.port:
+${PORT:${SERVER_PORT:8080}}`), separate liveness (`/api/v1/health`,
+`/actuator/health/liveness`) and DB-aware readiness
+(`/actuator/health/readiness`), a concurrency-safe one-time `SUPER_ADMIN`
+bootstrap, explicit email/phone normalization with case-insensitive functional
+unique indexes (accent-insensitive behaviour deliberately not implemented),
+and a configurable OpenAPI server URL (`APP_PUBLIC_URL`).
+
+**Verification (this machine):** `mvn -B clean verify` — `BUILD SUCCESS`,
+`Tests run: 44, Failures: 0, Errors: 0, Skipped: 9`. 35 tests executed and
+passed; the 9 real-PostgreSQL `PostgresMigrationIntegrationTest`
+(Testcontainers) tests were **skipped because Docker is unavailable** and are
+**not** reported as passed — they must be run in CI for genuine PostgreSQL
+evidence. H2 in `MODE=PostgreSQL` is used for fast application-level tests
+only. See [docs/development/CLOUD_MIGRATION_PLAN.md](development/CLOUD_MIGRATION_PLAN.md)
+and [docs/development/local-setup.md](development/local-setup.md).
+
+**Not done (by design / awaiting approval):** no commit, no push, no Supabase
+project creation, no production DB connection, no deployment. The deployment
+phase has not started.

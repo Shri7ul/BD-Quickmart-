@@ -14,11 +14,15 @@ each.
 | Backend framework | Spring Boot | 3.5.6 | Verified |
 | Build tool | Apache Maven | 3.9.9 | Verified |
 | Persistence | Spring Data JPA / Hibernate | Managed by Spring Boot 3.5.6 | Verified |
-| Database | MySQL | 8 (XAMPP) | **Pending developer setup** |
+| Database | PostgreSQL (Supabase) | 16 | Fresh schema; Flyway-managed |
+| JDBC driver | `org.postgresql:postgresql` | 42.7.7 (Boot BOM) | Verified |
+| Migrations | Flyway (`flyway-core` + `flyway-database-postgresql`) | 11.7.2 (Boot BOM) | Separate migration step |
 | API documentation | Springdoc OpenAPI (WebMVC UI) | 2.8.13 | Verified |
 | Security | Spring Security | Managed by Spring Boot 3.5.6 | Verified |
 | JWT library | JJWT (api / impl / jackson) | 0.12.6 | Verified (Goal 02) |
-| Test database | H2 (test scope, MySQL mode) | Spring Boot managed (2.3.232) | Verified (Goal 02) |
+| Fast test database | H2 in `MODE=PostgreSQL` (test scope) | Spring Boot managed (2.3.232) | Verified |
+| Real-PostgreSQL tests | Testcontainers `postgresql` + `junit-jupiter` (test scope) | Spring Boot managed | Skips without Docker |
+| MySQL driver | — | **Removed** | No active MySQL runtime dependency |
 | Real-time | Spring WebSocket | Managed by Spring Boot 3.5.6 | Verified |
 | Customer app | Flutter | 3.35.1 | Verified |
 | Rider app | Flutter | 3.35.1 | Verified |
@@ -64,14 +68,19 @@ update inventory atomically, and stock updates must be safe under concurrency
 directly.
 
 **Note on `ddl-auto`:** pinned to `none`. Hibernate never creates or alters
-tables. Schema ownership belongs to the developer-managed MySQL instance until
-migrations are introduced in a later goal.
+tables. Schema ownership belongs to versioned **Flyway** migrations
+(`V1__init_auth_schema.sql`), applied as a separate deployment step by a
+DDL-capable role. The running application has `spring.flyway.enabled=false`
+and `ddl-auto: none`; set `DB_DDL_AUTO=validate` in CI/staging to assert
+entity/schema alignment.
 
 **Note on the Hibernate dialect:** pinned explicitly to
-`org.hibernate.dialect.MySQLDialect`. Without it, Hibernate tries to read
-dialect metadata over a live JDBC connection and fails to start when MySQL is
-stopped. Pinning it lets the backend boot and report database state honestly
-through `/api/v1/health` instead of crashing.
+`org.hibernate.dialect.PostgreSQLDialect`. Without it, Hibernate tries to read
+dialect metadata over a live JDBC connection and fails to start when the
+database is unreachable. Pinning it lets the backend boot and report database
+state honestly through `/api/v1/health` (liveness) and
+`/actuator/health/readiness` (readiness, DB-aware) instead of crashing. The
+old MySQL `DB_DIALECT_VERSION` server-version workaround has been removed.
 
 ### Spring Security
 
@@ -106,18 +115,36 @@ Registered at `/ws/tracking`.
 
 ---
 
-## 3. MySQL 8 via XAMPP
+## 3. PostgreSQL 16 via Supabase
 
-Chosen because it is already installed on the target machines, it is a
-well-understood tool for the developer, and MySQL 8 is a production-reasonable
-database for this workload.
+The active database is a **fresh Supabase PostgreSQL 16** project, migrated
+from the original local MySQL 8 / XAMPP baseline with **no data carried over**.
+PostgreSQL is the approved cloud target: managed backups/PITR, TLS by default,
+and a first-class fit for the versioned Flyway migration workflow and Render
+hosting. `UTF8` encoding (Supabase default) stores Bangla script and emoji
+correctly.
 
-**`utf8mb4` / `utf8mb4_unicode_ci`** is mandatory, not a default to accept
-casually: the platform stores Bangla script and must support bilingual search
-and notifications. `utf8mb3` cannot represent all of it.
+The connection strategy matters:
 
-The database is created and managed by the developer through phpMyAdmin. No
-automation in this repository creates or modifies a database.
+| Connection | Port | Used by |
+|---|---|---|
+| Session Pooler | `5432` | Running Spring Boot app — preserves session state and `SELECT ... FOR UPDATE` |
+| Direct (`db.<ref>.supabase.co`) | `5432` | Flyway migrations / admin tasks |
+| Transaction Pooler | `6543` | **Avoid** — breaks session state and pessimistic locking |
+
+All connections require `sslmode=require`. Two roles are used: a
+least-privilege DML-only runtime role and a separate DDL-capable migration
+role. The application never runs migrations at startup
+(`spring.flyway.enabled=false`), so a Supabase outage cannot block startup.
+
+Because MySQL's `utf8mb4_unicode_ci` was case- **and** accent-insensitive while
+PostgreSQL's default collation is neither, case-insensitive uniqueness is
+defined **explicitly** with functional unique indexes on `lower(email)` /
+`lower(phone)`; accent-insensitive behaviour is deliberately not implemented.
+The original MySQL scripts are retained under
+`infrastructure/database/legacy/mysql/` as a historical, DO-NOT-RUN
+reference. Real PostgreSQL behaviour is validated with
+Testcontainers (`PostgresMigrationIntegrationTest`) in CI.
 
 ---
 
@@ -264,8 +291,10 @@ what makes a monorepo the right fit for a modular monolith.
    `.env.example` committed.
 2. **No premature infrastructure.** No broker, no orchestrator, no service mesh.
    The stack grows when a goal requires it.
-3. **The database is developer-managed.** The repository provides scripts and
-   documentation, never a database mutation.
+3. **The schema is migration-managed.** The repository provides a versioned
+   Flyway migration and documentation; the running application never performs
+   DDL. Migrations are a separate step executed by a dedicated DDL-capable
+   role, never by the runtime role.
 4. **One version of the API contract.** The OpenAPI document is generated from
    the backend and is the single source of truth for all three clients.
 5. **Honest empty states.** A placeholder screen states which goal fills it.

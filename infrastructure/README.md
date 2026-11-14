@@ -1,33 +1,72 @@
 # BD QuickMart — Infrastructure
 
-Local infrastructure assets for the platform.
+Local infrastructure assets and references for the platform.
 
 ---
 
-## Database
+## Database (active): Supabase PostgreSQL + Flyway
+
+The authoritative schema is a **fresh Supabase PostgreSQL** database owned by
+versioned Flyway migrations:
 
 ```
-infrastructure/database/init/
-├── 00_create_database.sql    Creates the bd_quickmart database
-└── 01_verify_connection.sql  Confirms the database is reachable
+backend/src/main/resources/db/migration/
+└── V1__init_auth_schema.sql    users, refresh_tokens, constraints, indexes
 ```
 
-Both are run **manually by the developer** through the phpMyAdmin SQL tab or
-the MySQL command line. Nothing in this repository creates, drops or modifies
-a database automatically.
+Key points:
 
-See [../../docs/database/schema.md](../../docs/database/schema.md) for the
-schema baseline and the module-to-table plan.
+- **No legacy MySQL data is migrated** — the cloud database starts empty.
+- **Schema ownership belongs to Flyway**, applied as a *separate* step with a
+  dedicated DDL-capable migration role (`DB_MIGRATION_URL`,
+  `DB_MIGRATION_USERNAME`, `DB_MIGRATION_PASSWORD`). The running application
+  connects with a **least-privilege DML-only role** (`DB_URL`, `DB_USERNAME`,
+  `DB_PASSWORD`) and has `spring.flyway.enabled=false` by default, so it never
+  performs DDL at startup.
+- Hibernate uses `ddl-auto: none` (set `DB_DDL_AUTO=validate` in CI/staging to
+  assert entity/schema alignment); it never creates or alters tables.
+- The app uses the Supabase **Session Pooler** (or direct connection) with
+  `sslmode=require`; migrations use the **direct** connection. Avoid the
+  transaction-mode pooler because refresh-token rotation uses
+  `SELECT ... FOR UPDATE`.
+
+Full setup (project creation, roles, SSL, pooler, exact `flyway:migrate`
+command, liveness/readiness probes and verification queries):
+[`docs/development/local-setup.md`](../docs/development/local-setup.md) and
+[`docs/development/CLOUD_MIGRATION_PLAN.md`](../docs/development/CLOUD_MIGRATION_PLAN.md).
+
+See [`docs/database/schema.md`](../docs/database/schema.md) for the schema
+baseline and the module-to-table plan.
+
+### Operational templates (`infrastructure/database/postgres/`)
+
+- `01_create_app_role_TEMPLATE.sql` — prepared (not executed) least-privilege
+  runtime role + grants. Run once, manually, with approval, after `V1` is applied.
+- `02_verify_schema.sql` — read-only PostgreSQL catalog checks for the migrated
+  schema (the PostgreSQL equivalents of the legacy MySQL verification scripts).
+
+These are operator templates; the application never runs them and no real
+credential is stored in them. See the folder's `README.md`.
 
 ---
 
-## XAMPP
+## Legacy MySQL scripts — historical only
 
-XAMPP is installed and managed by the developer. This repository does not
-install, start or configure it, and does not launch phpMyAdmin.
+```
+infrastructure/database/legacy/mysql/
+├── README.md                        Historical-only notice (read this first)
+├── 00_create_database.sql
+├── 01_verify_connection.sql
+├── 02_create_auth_tables.sql
+├── 03_verify_auth_tables.sql
+└── 04_admin_bootstrap_TEMPLATE.sql
+```
 
-To start MySQL: open the XAMPP Control Panel and click **Start** next to
-**MySQL**.
+These are the original MySQL 8 / XAMPP scripts from Goals 01–02, kept solely
+as a historical reference for the pre-migration baseline. **They are not an
+active schema initialization path and must not be run against PostgreSQL.**
+They were relocated out of the old `infrastructure/database/init/` path so that
+no conflicting initialization path remains. See the folder's `README.md`.
 
 ---
 
@@ -37,9 +76,8 @@ To start MySQL: open the XAMPP Control Panel and click **Start** next to
 |---|---|---|
 | `docker/` | Container definitions for a portable local stack | Goal 18 |
 | `monitoring/` | Metrics and alerting configuration | Goal 18 |
-| `ci/` | GitHub Actions workflows | Goal 18 |
+| `ci/` | GitHub Actions workflows (real-PostgreSQL test suite) | Goal 18 |
 | `backup/` | Database backup and restore procedures | Goal 18 |
 
-These are intentionally absent for now. Goal 01 introduces no infrastructure
-beyond the MySQL instance the developer already runs, because nothing in the
-current scope needs it.
+These are intentionally absent for now; the current scope uses the managed
+Supabase PostgreSQL instance and adds no local database server.

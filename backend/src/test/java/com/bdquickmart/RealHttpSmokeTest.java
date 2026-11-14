@@ -24,7 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "server.port=0",
-                "spring.datasource.url=jdbc:h2:mem:bdqm_http;MODE=MySQL;DB_CLOSE_DELAY=-1"
+                "spring.datasource.url=jdbc:h2:mem:bdqm_http;MODE=PostgreSQL;DB_CLOSE_DELAY=-1"
         })
 @ActiveProfiles("test")
 @DisplayName("Goal 02 real-HTTP smoke test")

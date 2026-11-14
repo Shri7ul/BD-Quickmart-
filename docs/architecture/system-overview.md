@@ -47,10 +47,11 @@ rather than by reaching into each other's internals.
                  │  └──────────────────────────────────┘  │
                  └────────────────────┬───────────────────┘
                                       │
-                         ┌────────────▼────────────┐
-                         │   MySQL 8 (XAMPP)      │
-                         │   database: bd_quickmart│
-                         └─────────────────────────┘
+                    ┌──────────────▼──────────────┐
+                    │  Supabase PostgreSQL 16     │
+                    │  schema owned by Flyway V1  │
+                    │  (Session Pooler + direct)  │
+                    └─────────────────────────────┘
 ```
 
 ### Why a modular monolith
@@ -68,8 +69,9 @@ requirement and no infrastructure for it is created now.
 ### Explicitly out of scope
 
 No Kubernetes, no Kafka, no message broker, no service mesh, no separate
-database per module. The only infrastructure is one MySQL instance and one
-Spring Boot process.
+database per module. The only infrastructure is one Supabase PostgreSQL
+database (schema owned by versioned Flyway migrations) and one Spring Boot
+process.
 
 ---
 
@@ -233,15 +235,26 @@ position. The rider app enforces this at the domain layer with
 
 ## 8. Database
 
-MySQL 8 via XAMPP, database name `bd_quickmart`, charset `utf8mb4` and
-collation `utf8mb4_unicode_ci`.
+Supabase **PostgreSQL 16** (`UTF8`), reached over TLS. The running application
+uses the **Session Pooler** with a least-privilege DML-only role; a separate,
+DDL-capable role applies versioned **Flyway** migrations over the **direct**
+connection as a distinct deployment step:
 
-The developer creates and manages the database manually through
-phpMyAdmin. The repository ships the bootstrap script, the verification script
-and a schema document, but never creates or modifies a database on the
-developer's machine.
+```
+backend/src/main/resources/db/migration/V1__init_auth_schema.sql
+```
 
-See [`docs/database/schema.md`](../database/schema.md).
+The application has `spring.flyway.enabled=false` and `ddl-auto: none`, so it
+never creates or alters schema at startup. No legacy MySQL data was migrated —
+this is a fresh database. The original MySQL 8 / XAMPP scripts are retained
+as a historical, DO-NOT-RUN reference under
+`infrastructure/database/legacy/mysql/` and are **not** an active schema path.
+
+Liveness (`/api/v1/health`, `/actuator/health/liveness`) stays up during a DB
+outage; readiness (`/actuator/health/readiness`) reports DB connectivity.
+
+See [`docs/database/schema.md`](../database/schema.md) and
+[`docs/development/local-setup.md`](../development/local-setup.md).
 
 ---
 
@@ -270,8 +283,11 @@ and refresh tokens with rotation and replay detection, BCrypt password hashing,
 stateless Spring Security with a JWT filter and JSON 401/403 handlers, six
 canonical roles with explicit authority gates, public registration limited to
 `CUSTOMER` / `RIDER`, a PENDING-rider approval workflow, privileged account
-provisioning, and an opt-in first-`SUPER_ADMIN` bootstrap. SQL migrations are
-shipped under `infrastructure/database/init/`.
+provisioning, and a concurrency-safe, opt-in first-`SUPER_ADMIN` bootstrap.
+The schema is owned by the Flyway migration
+`backend/src/main/resources/db/migration/V1__init_auth_schema.sql`
+(Supabase PostgreSQL); the superseded MySQL scripts are kept only as a
+historical reference under `infrastructure/database/legacy/mysql/`.
 
 Both Flutter apps gained sign-in, registration, session restore, secure token
 storage, a runtime server-URL override, and role/status-aware router guards

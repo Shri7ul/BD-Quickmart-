@@ -1,23 +1,16 @@
 # BD QuickMart — Database Schema
 
-> **Status:** Goal 02 authentication schema implemented as SQL migrations.
+> **Status:** the active database is a **fresh Supabase PostgreSQL** project.
+> Its schema is owned by the versioned Flyway migration
+> `backend/src/main/resources/db/migration/V1__init_auth_schema.sql`, which
+> creates the Goal 02 auth tables `users` and `refresh_tokens`.
 >
-> The database itself was created by the developer on 2026-11-09 by running
-> `infrastructure/database/init/00_create_database.sql` in phpMyAdmin, and the
-> connection was verified against the live server:
-> `GET /api/v1/health` reports `"database": "UP"`.
->
-> Goal 02 ships `02_create_auth_tables.sql` defining `users` and
-> `refresh_tokens`, plus a read-only verification script and a first-admin
-> bootstrap template. **On this machine (verified 2026-11-12)** the two auth
-> tables are present in `bd_quickmart`: with explicit developer approval the
-> `CREATE TABLE IF NOT EXISTS` script was run once during finalization, and the
-> resulting schema was checked with the read-only `03_verify_auth_tables.sql`
-> (see [§3](#3-current-schema-state)). On a **fresh** machine, running
-> `00_create_database.sql` then `02_create_auth_tables.sql` remains a manual
-> developer action (see
-> [`docs/development/local-setup.md`](../development/local-setup.md)); no
-> schema object was dropped, recreated or altered by the agent.
+> The database was migrated from the original local MySQL 8 / XAMPP baseline
+> (`bd_quickmart`) to a **new, empty** PostgreSQL schema: **no MySQL data was
+> carried over**. The old MySQL scripts are retained as a historical reference
+> only under
+> [`infrastructure/database/legacy/mysql/`](../../infrastructure/database/legacy/mysql/README.md)
+> and are **not** an active schema path — do not run them against PostgreSQL.
 >
 > The remaining module tables are produced in later, separately approved
 > goals. This document records what is fixed now so that later design work
@@ -29,113 +22,151 @@
 
 | Property | Value | Notes |
 |---|---|---|
-| Database name | `bd_quickmart` | Created by the developer in XAMPP/phpMyAdmin |
-| Engine | InnoDB | Required for foreign keys and transactions |
-| Character set | `utf8mb4` | Stores Bangla script and emoji correctly |
-| Collation | `utf8mb4_unicode_ci` | Case- and accent-insensitive comparison |
-| Server | MySQL 8 (XAMPP) | Local development only |
-| Port | `3306` | XAMPP default |
+| Engine | PostgreSQL 16 (Supabase) | Managed cloud project |
+| Character set | `UTF8` | Stores Bangla script and emoji correctly (Supabase default) |
+| Collation | default (`C.UTF-8` / ICU) | Case- and accent-**sensitive** by default; see §3 for the explicit uniqueness contract |
+| Connection (runtime) | Session Pooler, port `5432` | `sslmode=require`; preserves session state and `FOR UPDATE` |
+| Connection (migration) | Direct, port `5432` | `db.<ref>.supabase.co`; used only by the separate Flyway step |
+| Transaction Pooler (6543) | **Avoid** | Breaks session state / prepared statements / pessimistic locking |
 
-The database is **not** created by any script in this repository. Creating it is
-a manual developer action — see [`docs/development/local-setup.md`](../development/local-setup.md).
+The repository never creates a database and never runs DDL from the running
+application. Creating the Supabase project, the two roles and applying the
+migration is a manual developer/deployment action — see
+[`docs/development/local-setup.md`](../development/local-setup.md).
 
 ---
 
-## 2. Scripts provided
+## 2. Schema ownership: Flyway + two roles
 
-All scripts live in `infrastructure/database/init/` and are executed manually
-through the phpMyAdmin **SQL** tab. They are numbered in run order.
+Migrations are applied as a **separate step**, never at application startup.
 
-| Script | Purpose | When to run |
+| Concern | Who | Privileges |
 |---|---|---|
-| `00_create_database.sql` | Creates `bd_quickmart` with the correct charset and collation | Once, before first backend start |
-| `01_verify_connection.sql` | Confirms the database exists, is reachable and has the right charset | After `00` |
-| `02_create_auth_tables.sql` | Creates `users` and `refresh_tokens` (Goal 02 auth schema) | Before first Goal 02 backend start |
-| `03_verify_auth_tables.sql` | Read-only `information_schema` check of both auth tables | After `02` |
-| `04_admin_bootstrap_TEMPLATE.sql` | Commented `INSERT` template for the first `SUPER_ADMIN` | Optional alternative to the env bootstrap |
+| Schema DDL | `DB_MIGRATION_*` role (direct connection) | `GRANT ALL ON SCHEMA public`; owns `flyway_schema_history` |
+| Runtime DML | `DB_*` role (Session Pooler) | `SELECT, INSERT, UPDATE, DELETE` on tables, `USAGE, SELECT` on sequences; **no DDL, no superuser** |
 
-`00_create_database.sql` uses `CREATE DATABASE IF NOT EXISTS` and
-`02_create_auth_tables.sql` uses `CREATE TABLE IF NOT EXISTS`, so both are safe
-to run repeatedly. No script drops, truncates, deletes or modifies any other
-database, table or row on the server. `04_admin_bootstrap_TEMPLATE.sql` is
-intentionally **not runnable as-is**: its `INSERT` is commented out and the
-password is a `<BCRYPT_HASH>` placeholder.
+Key configuration decisions:
+
+- `spring.flyway.enabled` defaults to **`false`** in the running application,
+  so a Supabase outage or a missing migration role can never block startup.
+  `DB_MIGRATION_*` credentials live only in the deployment step / CI secret
+  store.
+- `ddl-auto: none` — Hibernate never creates or alters tables. Set
+  `DB_DDL_AUTO=validate` in CI/staging to assert entity/schema alignment.
+- The `flyway-maven-plugin` is **not bound to a lifecycle phase**; it runs
+  only when explicitly invoked (`mvn -B flyway:migrate ...`).
+- Migrations are forward-only: a correction is a new `V2__...sql`, never a
+  destructive edit to a live schema.
+
+Apply (see [local-setup.md §1](../development/local-setup.md#1-database-setup--supabase-postgresql-developer-task)):
+
+```bash
+cd backend
+mvn -B flyway:migrate \
+  -Dflyway.url="$DB_MIGRATION_URL" \
+  -Dflyway.user="$DB_MIGRATION_USERNAME" \
+  -Dflyway.password="$DB_MIGRATION_PASSWORD"
+```
+
+The historical MySQL scripts are:
+
+```
+infrastructure/database/legacy/mysql/
+├── README.md                          (HISTORICAL ONLY — DO NOT RUN)
+├── 00_create_database.sql
+├── 01_verify_connection.sql
+├── 02_create_auth_tables.sql
+├── 03_verify_auth_tables.sql
+└── 04_admin_bootstrap_TEMPLATE.sql    (commented, non-runnable)
+```
 
 ---
 
-## 3. Current schema state
+## 3. Current schema state (Flyway V1)
 
-**Verified against the live server (2026-11-12).** Both Goal 02 tables are
-present in the developer's `bd_quickmart` database. The read-only
-`03_verify_auth_tables.sql` was executed and returned:
+`V1__init_auth_schema.sql` is the single source of truth. Verify it is applied
+with read-only queries:
 
-- `refresh_tokens` and `users`, both `ENGINE = InnoDB` and
-  `utf8mb4_unicode_ci`;
-- the exact column layout, types and nullability listed below;
-- all expected indexes and unique keys (`uk_users_public_id`,
-  `uk_users_email`, `uk_users_phone`, `idx_users_role_status`,
-  `uk_refresh_token_hash`, `idx_refresh_family`, `idx_refresh_user`);
-- the `fk_refresh_user` foreign key from `refresh_tokens.user_id` to
-  `users.id`.
+```sql
+select version, description, success from flyway_schema_history order by installed_rank;
+select tablename from pg_tables where schemaname='public' order by tablename;
+select indexname, indexdef from pg_indexes where schemaname='public' order by indexname;
+```
 
-At the time of the check the tables held 10 `users` rows and 16
-`refresh_tokens` rows (throwaway accounts created by the live HTTP
-verification). All six roles were present. The live application served the
-complete auth / role / rider-approval verification suite against this real
-MySQL instance — no result depended on H2.
-
-> Historical note: on 2026-11-11 a read-only check returned `table_count = 0`;
-> that was the pre-import state. On a **fresh** machine, run
-> `00_create_database.sql` then `02_create_auth_tables.sql` through phpMyAdmin
-> before the backend can serve auth requests. Do not re-import onto a database
-> where the tables already exist — the script is `CREATE TABLE IF NOT EXISTS`,
-> so a repeat is harmless but unnecessary. No schema object was dropped,
-> recreated or altered by the agent.
-
-`ddl-auto` is pinned to `none` in `backend/src/main/resources/application.yml`,
-so Hibernate will never create or alter tables on its own. Schema ownership
-stays with the developer-managed MySQL instance; there is no Flyway/Liquibase
-automation.
-
-### Goal 02 tables
-
-**`users`** — one row per account across all six roles.
+### **`users`** — one row per account across all six roles
 
 | Column | Type | Notes |
 |---|---|---|
-| `id` | `BIGINT AUTO_INCREMENT` | Surrogate primary key |
-| `public_id` | `CHAR(36)` | Unique external identifier (UUID), exposed in JWT `sub` and API responses |
-| `email` | `VARCHAR(255)` | Unique, login identifier |
-| `phone` | `VARCHAR(32)` | Unique, login identifier |
+| `id` | `BIGINT GENERATED BY DEFAULT AS IDENTITY` | Surrogate primary key (`GenerationType.IDENTITY`) |
+| `public_id` | `VARCHAR(36)` | Unique external UUID v4 string, exposed in JWT `sub` and API responses |
+| `email` | `VARCHAR(255)` | Unique, login identifier, normalised lower-case |
+| `phone` | `VARCHAR(32)` | Unique, login identifier, trimmed |
 | `password_hash` | `VARCHAR(255)` | BCrypt hash; never returned by the API |
 | `full_name` | `VARCHAR(120)` | |
-| `role` | `VARCHAR(32)` | `CUSTOMER`, `RIDER`, `ADMIN`, `SUPER_ADMIN`, `STORE_MANAGER`, `INVENTORY_OPERATOR` |
-| `status` | `VARCHAR(24)` | `ACTIVE`, `PENDING`, `REJECTED`, `DISABLED` |
-| `version` | `BIGINT` | Optimistic-lock version |
-| `created_at` / `updated_at` | `DATETIME(6)` | JPA-audited, UTC |
-| `deleted_at` | `DATETIME(6) NULL` | Soft-delete marker |
+| `role` | `VARCHAR(32)` | `CHECK` in `CUSTOMER`, `RIDER`, `ADMIN`, `SUPER_ADMIN`, `STORE_MANAGER`, `INVENTORY_OPERATOR` |
+| `status` | `VARCHAR(24)` | `CHECK` in `ACTIVE`, `PENDING`, `REJECTED`, `DISABLED` |
+| `version` | `BIGINT NOT NULL DEFAULT 0` | Optimistic-lock version |
+| `created_at` / `updated_at` | `TIMESTAMPTZ NOT NULL` | JPA-audited, UTC |
+| `deleted_at` | `TIMESTAMPTZ NULL` | Soft-delete marker |
 
-Indexes: unique on `public_id`, `email`, `phone`; composite on
-(`role`, `status`) for the pending-rider query.
+Constraints / indexes:
 
-**`refresh_tokens`** — persisted rotation state. **Only the SHA-256 hash of
-each token is stored**, never the raw token.
+- `UNIQUE (public_id)`, `UNIQUE (email)`, `UNIQUE (phone)`;
+- `CREATE UNIQUE INDEX uk_users_email_lower ON users (lower(email));`
+- `CREATE UNIQUE INDEX uk_users_phone_lower ON users (lower(phone));`
+- `CREATE INDEX idx_users_role_status ON users (role, status);`
+
+### **`refresh_tokens`** — persisted rotation state
+
+**Only the SHA-256 hex hash of each token is stored**, never the raw token.
 
 | Column | Type | Notes |
 |---|---|---|
-| `id` | `BIGINT AUTO_INCREMENT` | Primary key |
-| `user_id` | `BIGINT` | Foreign key to `users(id)` |
-| `token_hash` | `CHAR(64)` | Unique SHA-256 hex digest |
-| `family_id` | `CHAR(36)` | Groups a rotation chain; reuse of a revoked token revokes the whole family |
-| `expires_at` | `DATETIME(6)` | Absolute expiry |
-| `revoked_at` | `DATETIME(6) NULL` | Set on rotation, logout or replay detection |
-| `replaced_by_hash` | `CHAR(64) NULL` | Links to the successor token |
-| `version` | `BIGINT` | Optimistic-lock version |
+| `id` | `BIGINT GENERATED BY DEFAULT AS IDENTITY` | Primary key |
+| `token_hash` | `VARCHAR(64)` | Unique SHA-256 hex digest |
+| `family_id` | `VARCHAR(36)` | Groups a rotation chain; reuse of a revoked token revokes the whole family |
+| `user_id` | `BIGINT NOT NULL` | FK to `users(id)` |
+| `expires_at` | `TIMESTAMPTZ NOT NULL` | Absolute expiry |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | |
+| `revoked_at` | `TIMESTAMPTZ NULL` | Set on rotation, logout or replay detection |
+| `replaced_by_hash` | `VARCHAR(64) NULL` | Links to the successor token |
+| `version` | `BIGINT NOT NULL DEFAULT 0` | Optimistic-lock version |
 
-Both tables are `ENGINE = InnoDB`, `DEFAULT CHARSET = utf8mb4`,
-`COLLATE = utf8mb4_unicode_ci`. The JPA entities use portable annotations with
-no MySQL-only `columnDefinition`, so the same mappings run unmodified against
-the H2 in-memory database used by the integration tests (`MODE=MySQL`).
+Constraints / indexes:
+
+- `UNIQUE (token_hash)`;
+- `fk_refresh_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT`
+  (rows are soft-deleted, so history is preserved);
+- `idx_refresh_family`, `idx_refresh_user`;
+- `idx_refresh_family_live` — a **partial index** on `family_id WHERE revoked_at
+  IS NULL` supporting the replay-detection query.
+
+Rotation is serialised by `@Lock(LockModeType.PESSIMISTIC_WRITE)` on
+`RefreshTokenRepository.findByHashForUpdate(...)`, which renders as
+`SELECT ... FOR UPDATE` on PostgreSQL. Use the Session Pooler (never the
+transaction-mode pooler) so session-scoped locks behave correctly.
+
+### Normalisation / case-insensitive uniqueness (explicit)
+
+MySQL's `utf8mb4_unicode_ci` was case- **and** accent-insensitive; PostgreSQL's
+default collation is neither. The application therefore defines and tests the
+contract explicitly rather than assuming equivalence:
+
+- **Email** is stored as `trim().toLowerCase(Locale.ROOT)`.
+- **Phone** is stored as `trim()` only (case is not changed).
+- Case-insensitive uniqueness is enforced by the functional unique indexes on
+  `lower(email)` / `lower(phone)` **in addition to** plain `UNIQUE` constraints.
+- `lower()` is case-folding only — **accent-insensitive behaviour is deliberately
+  NOT implemented** (no `citext`, `unaccent` or non-deterministic ICU
+  collation), because that requirement is not established.
+- `NormalizationIntegrationTest` (H2 in `MODE=PostgreSQL`) covers the
+  application-level contract; `PostgresMigrationIntegrationTest` (Testcontainers
+  PostgreSQL) covers the real functional indexes, `TIMESTAMPTZ` round-trip,
+  `CHECK` constraints, FK enforcement and `FOR UPDATE` behaviour.
+
+The JPA entities use portable annotations with no MySQL-only
+`columnDefinition`, so the same mappings run unmodified against H2 in
+`MODE=PostgreSQL` for the fast test suite.
 
 ---
 
@@ -173,50 +204,54 @@ These constraints apply to every table designed in later goals.
 `products.name` and `products.name_bn`. This keeps bilingual search (Goal 04)
 and bilingual notifications (Goal 15) indexable in a single table.
 
-**Money.** Monetary amounts use `DECIMAL(12,2)`. `FLOAT`/`DOUBLE` are not used
-for money, because binary floating point cannot represent values like `0.10`
-exactly and would drift when summed across an order.
+**Money.** Monetary amounts use `NUMERIC(12,2)` (PostgreSQL). `FLOAT`/`DOUBLE`
+are not used for money, because binary floating point cannot represent values
+like `0.10` exactly and would drift when summed across an order.
 
-**Time.** All timestamps are stored in UTC and rendered in
-`Asia/Dhaka` at the presentation layer. The JDBC connection and Jackson
-serialization are already configured for this in the backend.
+**Time.** All timestamps are `TIMESTAMPTZ` stored in UTC and rendered in
+`Asia/Dhaka` at the presentation layer. `hibernate.jdbc.time_zone=UTC` binds
+`java.time.Instant` values; Jackson serialization is configured for UTC.
 
-**Identity.** Primary keys are `BIGINT UNSIGNED` auto-increment surrogate keys.
-Externally visible identifiers (order number, rider code) are separate columns
-with a unique index, so internal key values are never leaked as business IDs.
+**Identity.** Primary keys are `BIGINT GENERATED BY DEFAULT AS IDENTITY` (no
+`UNSIGNED` in PostgreSQL). Externally visible identifiers (order number, rider
+code) are separate columns with a unique index, so internal key values are
+never leaked as business IDs. Application-generated UUIDs are stored as
+`VARCHAR(36)` strings; no `uuid`/`pgcrypto` extension is required.
 
 **Audit columns.** Every table carries `created_at` and `updated_at`.
-`@EnableJpaAuditing` is now enabled on the application class (Goal 02) with a
+`@EnableJpaAuditing` is enabled on the application class (Goal 02) with a
 `DateTimeProvider` backed by an injectable `Clock`, so these columns are
 populated automatically rather than by hand and are deterministic in tests.
 
 **Soft deletes.** Records that are referenced by historical orders are never
-hard-deleted; they carry a `deleted_at` column instead.
+hard-deleted; they carry a `deleted_at` column instead, and child FKs use
+`ON DELETE RESTRICT`.
 
 ---
 
 ## 6. Connection configuration
 
 The backend never hardcodes credentials. The datasource is configured entirely
-through environment variables.
+through environment variables; see
+[`docs/development/environment-variables.md`](../development/environment-variables.md).
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DB_URL` | `jdbc:mysql://localhost:3306/bd_quickmart?...` | JDBC URL |
-| `DB_USERNAME` | `root` | MySQL user |
-| `DB_PASSWORD` | *(empty)* | MySQL password |
-| `DB_DRIVER` | `com.mysql.cj.jdbc.Driver` | JDBC driver class |
-| `DB_DDL_AUTO` | `none` | Hibernate schema handling |
-| `DB_DIALECT` | `org.hibernate.dialect.MySQLDialect` | Hibernate dialect |
-| `DB_POOL_MAX_SIZE` | `10` | HikariCP maximum pool size |
+| `DB_URL` | `jdbc:postgresql://localhost:5432/postgres` | Runtime JDBC URL (Session Pooler, `sslmode=require`) |
+| `DB_USERNAME` | `postgres` | Least-privilege runtime role (never the superuser in production) |
+| `DB_PASSWORD` | *(empty)* | Runtime-role password. Secret; never committed |
+| `DB_DRIVER` | `org.postgresql.Driver` | JDBC driver class |
+| `DB_DDL_AUTO` | `none` | Hibernate schema handling (`validate` in CI/staging) |
+| `DB_DIALECT` | `org.hibernate.dialect.PostgreSQLDialect` | Pinned so the context builds without a live DB connection |
+| `DB_POOL_MAX_SIZE` | `10` | HikariCP maximum pool size (keep ~5–10 for Supabase) |
 | `DB_POOL_MIN_IDLE` | `2` | HikariCP minimum idle connections |
-| `DB_POOL_CONNECTION_TIMEOUT` | `5000` | HikariCP connection wait in ms. Bounded so a stopped MySQL cannot stall a request for the 30s driver default |
-| `DB_POOL_INIT_FAIL_TIMEOUT` | `-1` | Let the app boot while MySQL is stopped |
+| `DB_POOL_CONNECTION_TIMEOUT` | `5000` | Bounded connection wait in ms |
+| `DB_POOL_INIT_FAIL_TIMEOUT` | `-1` | `-1` lets the app boot while PostgreSQL is unavailable; readiness reports the real state |
+| `DB_MIGRATION_URL` / `DB_MIGRATION_USERNAME` / `DB_MIGRATION_PASSWORD` | *(empty)* | Separate DDL-capable migration step only; never in the running app |
+| `SPRING_FLYWAY_ENABLED` | `false` | Leave `false` in production (separate migration step) |
 
-The URL defaults include `serverTimezone=Asia/Dhaka`,
-`characterEncoding=UTF-8` — both required for correct Bangla storage — plus
-`connectTimeout=2000` and `socketTimeout=10000`, so the MySQL driver itself
-fails fast instead of waiting on a dead socket.
+`DB_DIALECT_VERSION` (the old MySQL server-version workaround) is removed —
+it has no meaning on PostgreSQL. There are no MySQL-only JDBC URL parameters.
 
 ---
 
@@ -224,10 +259,15 @@ fails fast instead of waiting on a dead socket.
 
 Three checks, in order:
 
-1. **Script check** — run `01_verify_connection.sql` in phpMyAdmin. It must
-   return the database name, the MySQL version and `utf8mb4` / `utf8mb4_unicode_ci`.
-2. **Backend check** — start the backend and call `GET /api/v1/health`.
-   The `data.database` field must read `UP`. While MySQL is stopped it reads
-   `DOWN` — this is expected and is the honest reported state.
-3. **Pool check** — `GET /actuator/health` shows the same information in
-   Spring Boot's own format.
+1. **Migration check** — `select version, description, success from
+   flyway_schema_history order by installed_rank;` returns exactly one `V1`
+   row with `success = true`, plus `users` and `refresh_tokens` in
+   `pg_tables`.
+2. **Liveness check** — `GET /api/v1/health` returns HTTP 200 with
+   `data.database: UP` while PostgreSQL is reachable. It stays 200 during a
+   DB outage (liveness) and reports `DOWN` in the body; the probe is bounded
+   to 2 seconds.
+3. **Readiness check** — `GET /actuator/health/readiness` (`readinessState` +
+   `db`) returns `UP` only when PostgreSQL is reachable and **503** when it
+   is not. `GET /actuator/health/liveness` excludes the `db` indicator, so a
+   temporary DB outage never makes the platform restart a healthy process.

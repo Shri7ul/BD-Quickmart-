@@ -22,6 +22,10 @@ public class OpenApiConfig {
     @Value("${app.api.version:v1}")
     private String apiVersion;
 
+    /** Public base URL of the deployed backend (Render), injected via env. */
+    @Value("${app.public-url:http://localhost:8080}")
+    private String publicUrl;
+
     @Bean
     public OpenAPI bdQuickMartOpenAPI() {
         final String schemeName = "bearerAuth";
@@ -45,7 +49,7 @@ public class OpenApiConfig {
                         .license(new License().name("Proprietary")))
                 .servers(List.of(
                         new Server().url("http://localhost:8080").description("Local development"),
-                        new Server().url("https://api.bdquickmart.com").description("Production")))
+                        new Server().url(publicUrl).description("Deployed (APP_PUBLIC_URL)")))
                 .components(new Components().addSecuritySchemes(schemeName,
                         new SecurityScheme()
                                 .type(SecurityScheme.Type.HTTP)

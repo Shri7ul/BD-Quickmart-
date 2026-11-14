@@ -1,8 +1,15 @@
-# Test profile: an isolated in-memory H2 database in MySQL compatibility mode.
-# This file is test-scope only; production uses application.yml + MySQL.
+# Test profile: an isolated in-memory H2 database in PostgreSQL compatibility
+# mode. This file is test-scope only; production uses application.yml +
+# Supabase PostgreSQL (schema owned by Flyway, applied out-of-band).
+#
+# H2 in PostgreSQL mode is a fast stand-in for application-level tests; it is
+# NOT a substitute for real PostgreSQL. PostgreSQL-specific behaviour
+# (TIMESTAMPTZ, functional lower() unique indexes, partial indexes, CHECK,
+# FOR UPDATE) is validated by PostgresMigrationIntegrationTest, which uses
+# Testcontainers and is skipped when Docker is unavailable.
 spring:
   datasource:
-    url: jdbc:h2:mem:bdqm;MODE=MySQL;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:bdqm;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
     username: sa
     password: ""
     driver-class-name: org.h2.Driver
@@ -11,9 +18,12 @@ spring:
       ddl-auto: create-drop
     properties:
       hibernate:
-        # Main config pins MySQLDialect so tests must override it explicitly.
+        # Main config pins PostgreSQLDialect so tests must override it
+        # explicitly with the H2 dialect.
         dialect: org.hibernate.dialect.H2Dialect
-        dialect.version: ""
+  # Migrations are a separate deploy step; never run at test-context startup.
+  flyway:
+    enabled: false
 
 # No JWT secret is committed. The test profile is allowed an ephemeral key
 # by JwtConfig, so `mvn verify` needs no environment variables at all.
