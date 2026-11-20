@@ -30,5 +30,5 @@ COPY --from=build /workspace/target/bd-quickmart-backend-0.1.0.jar /app/app.jar
 RUN chown -R bdqm:bdqm /app
 USER bdqm
 
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+EXPOSE 8080 10000
+ENTRYPOINT ["java", "-Djava.net.preferIPv4Stack=true", "-jar", "/app/app.jar"]

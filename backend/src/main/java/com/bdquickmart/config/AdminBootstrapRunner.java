@@ -115,6 +115,9 @@ public class AdminBootstrapRunner implements ApplicationRunner {
             // between). Exactly one administrator exists; do not fail startup.
             log.info("SUPER_ADMIN bootstrap raced with another instance; skipping. "
                     + "The unique constraints prevented a duplicate administrator.");
+        } catch (Exception ex) {
+            log.error("SUPER_ADMIN bootstrap failed (database may be unreachable or schema not migrated): {}",
+                    ex.getMessage());
         }
     }
 }

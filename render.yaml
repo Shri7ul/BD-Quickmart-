@@ -70,7 +70,7 @@ services:
       - key: DB_POOL_MAX_SIZE
         value: "5"
       - key: DB_POOL_MIN_IDLE
-        value: "1"
+        value: "0"
       - key: DB_POOL_CONNECTION_TIMEOUT
         value: "5000"
       - key: DB_POOL_INIT_FAIL_TIMEOUT
@@ -87,6 +87,8 @@ services:
       # ---- Server / deployment -----------------------------------------
       # Render injects PORT automatically. DO NOT set PORT here; leave it
       # unset so the app binds via ${PORT:${SERVER_PORT:8080}}.
+      - key: SERVER_ADDRESS
+        value: "0.0.0.0"
       # Verified live 2026-11-14: https://bd-quickmart-backend.onrender.com
       # (OpenAPI "BD QuickMart API", liveness 200, /api/v1/health 200,
       # WSS 101). Set APP_PUBLIC_URL to that exact URL in the Render
