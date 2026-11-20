@@ -21,7 +21,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 public class WebConfig {
 
-    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:3000}")
+    /**
+     * Explicit origins only: credentials are enabled, so a wildcard origin is
+     * invalid. The production admin origin is part of the default so a fresh
+     * deployment allows it even before APP_CORS_ALLOWED_ORIGINS is set. Keep
+     * this default in sync with {@code app.cors.allowed-origins} in
+     * application.yml.
+     */
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:3000,https://bdquickmart.vercel.app}")
     private List<String> allowedOrigins;
 
     @Bean

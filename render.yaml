@@ -89,21 +89,22 @@ services:
       # unset so the app binds via ${PORT:${SERVER_PORT:8080}}.
       - key: SERVER_ADDRESS
         value: "0.0.0.0"
-      # Verified live 2026-11-14: https://bd-quickmart-backend.onrender.com
-      # (OpenAPI "BD QuickMart API", liveness 200, /api/v1/health 200,
-      # WSS 101). Set APP_PUBLIC_URL to that exact URL in the Render
-      # dashboard so OpenAPI/link generation uses the public host instead
-      # of the current stale http://localhost:8080 default.
+      # Live service verified 2026-11-20: https://bd-quickmart.onrender.com
+      # (OpenAPI "BD QuickMart API", liveness 200, /api/v1/health 200 with
+      # database UP). The old bd-quickmart-backend.onrender.com host is a
+      # SUSPENDED service (HTTP 503) and must not be used. Set APP_PUBLIC_URL
+      # to the live URL in the Render dashboard so OpenAPI/link generation
+      # stops advertising http://localhost:8080.
       - key: APP_PUBLIC_URL
         sync: false
 
       # ---- CORS ---------------------------------------------------------
-      # Exact Vercel production origin(s), comma-separated. Wildcards are
-      # invalid because WebConfig uses setAllowCredentials(true). No URL is
-      # invented here - supply the real origin after Vercel is deployed.
-      # VERIFIED 2026-11-14: only localhost:5173 / localhost:3000 are
-      # currently allowed; vercel.app origins return 403. Add the real
-      # Vercel origin here (see docs/development/DEPLOYMENT.md).
+      # Exact origin(s), comma-separated. Wildcards are invalid because
+      # WebConfig uses setAllowCredentials(true). The admin frontend's exact
+      # origin is https://bdquickmart.vercel.app. Set that value here in the
+      # Render dashboard (it is also in the application.yml default so a
+      # fresh deploy works even if this env var is not set). See
+      # docs/development/DEPLOYMENT.md section 0.
       - key: APP_CORS_ALLOWED_ORIGINS
         sync: false
 

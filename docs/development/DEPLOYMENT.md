@@ -6,14 +6,17 @@ backend hostname below is a **public URL, not a secret** (it is visible in
 every client bundle). This is a guide, not an executable script; no deployment
 was performed from this repository.
 
-> **Production backend (confirmed by the operator, verified live 2026-11-14):**
-> `https://bd-quickmart-backend.onrender.com`
-> - API base: `https://bd-quickmart-backend.onrender.com/api/v1`
-> - WebSocket: `wss://bd-quickmart-backend.onrender.com/ws/tracking`
+> **Production backend (live service, verified 2026-11-20):**
+> `https://bd-quickmart.onrender.com`
+> - API base: `https://bd-quickmart.onrender.com/api/v1`
+> - WebSocket: `wss://bd-quickmart.onrender.com/ws/tracking`
 >
-> All three client applications and `vercel.json` are configured with this URL.
-> See section 0 for the actual live health state — **the backend is reachable
-> but its database is DOWN**, so end-to-end auth flows are not yet verifiable.
+> `admin-web/vercel.json` is configured with this URL. See section 0 for live
+> health and the CORS fix. **Warning:** the older hostname
+> `bd-quickmart-backend.onrender.com` is a *different, suspended* Render service
+> (HTTP 503 "Service Suspended", header `x-render-routing: suspend`). The
+> customer/rider Flutter release builds still bake in that old host and must be
+> rebuilt against the live URL — see section 5.
 
 ## Topology
 
@@ -31,43 +34,42 @@ the real Render HTTPS URL; Render needs the Supabase connection URI.
 
 ---
 
-## 0. Verified live deployment status (2026-11-14)
+## 0. Verified live deployment status (2026-11-20)
 
-Probed directly against `https://bd-quickmart-backend.onrender.com` (Render
-free-tier cold start took ~59 s; subsequent calls were fast). Results are
+Probed directly against `https://bd-quickmart.onrender.com`. Results are
 **observations, not claims of success**:
 
 | Probe | Result | Meaning |
 |---|---|---|
 | `GET /actuator/health/liveness` | `200` `{"status":"UP"}` | JVM/app process alive, deploy reachable |
-| `GET /api/v1/health` | `200`, `data.status=UP`, **`database: DOWN`** | HTTP layer works; DB probe times out |
-| `GET /actuator/health` | `503` `db: DOWN` | `CannotGetJdbcConnectionException` |
-| `GET /actuator/health/readiness` | `503` `db: DOWN` | Not ready to serve traffic |
-| `GET /v3/api-docs` | `200`, title **"BD QuickMart API"**, 13 paths | Confirms service identity |
-| `WSS /ws/tracking` handshake | **`101 Switching Protocols`** | WebSocket transport reachable |
-| CORS preflight from `vercel.app` origins | **`403`** | Admin origin not in allowlist |
-| OpenAPI `servers` | `http://localhost:8080` | `APP_PUBLIC_URL` stale |
+| `GET /api/v1/health` | `200`, `data.status=UP`, **`database: UP`** | HTTP layer and Supabase both healthy |
+| `GET /v3/api-docs` | `200`, title **"BD QuickMart API"** | Confirms service identity |
+| `OPTIONS /api/v1/auth/login` from `https://bdquickmart.vercel.app` | `403 Invalid CORS request` **before the fix** | Spring `CorsFilter`: origin not in allowlist |
+| `OPTIONS /api/v1/auth/login` from `http://localhost:5173` | `200` + `Access-Control-Allow-*` | Confirms CORS mechanism works when origin is allowed |
+| `GET /actuator/health/liveness` on `bd-quickmart-backend.onrender.com` | `503` **"Service Suspended"**, `x-render-routing: suspend` | **Render-level suspension, not Spring Boot** — source of the reported preflight 503 |
 
-**Interpretation:** the Render service is deployed and reachable, but the
-Supabase database connection is failing — consistent with the rotated/rejected
-`SUPABASE_DATABASE_URL` password found earlier. Registration, login, refresh,
-logout, session restore, rider approval and role guards therefore **cannot be
-verified live** until the database is fixed. Local test suites pass (see
-`PROJECT_PROGRESS.md`) but that is **not** live E2E verification.
+**Root cause of the admin login failure:** the deployed Vercel bundle had
+`VITE_API_BASE_URL=https://bd-quickmart-backend.onrender.com/api/v1` baked in.
+That host is a *suspended* Render service, so Chrome saw a **503** on the
+preflight. Separately, the live backend rejected the exact Vercel origin with a
+**403** because `APP_CORS_ALLOWED_ORIGINS` was never set (only localhost
+defaults). Both are fixed in this change: `vercel.json` now points at the live
+service, and the exact origin `https://bdquickmart.vercel.app` is in the backend
+allowlist default. Local MockMvc integration tests cover the preflight contract;
+a live re-check after deploy is still required (see section 7).
 
-**Exact operator actions still required** (all need Render/Supabase dashboard
-access — no cloud credentials were available here):
+**Exact operator actions still required** (Render/Vercel dashboards):
 
-1. Reset/confirm the Supabase DB password and update `SUPABASE_DATABASE_URL` on
-   Render, then apply the `V1` schema (section 2). Recheck readiness → `UP`.
-2. Set `APP_CORS_ALLOWED_ORIGINS` on Render to include the **exact Vercel
-   production origin** (currently only `http://localhost:5173` and
-   `http://localhost:3000` are allowed; wildcards are invalid because
-   `setAllowCredentials(true)` is used).
-3. Set `APP_PUBLIC_URL=https://bd-quickmart-backend.onrender.com` on Render so
-   the OpenAPI server list stops advertising `localhost:8080`.
-4. Deploy the admin web to Vercel (section 4) and re-run the section 7
-   checklist.
+1. In Render, set `APP_CORS_ALLOWED_ORIGINS=https://bdquickmart.vercel.app`
+   (or the full comma-separated list if other clients need CORS). Wildcards
+   are invalid because `setAllowCredentials(true)` is used. Redeploy.
+2. In Render, set `APP_PUBLIC_URL=https://bd-quickmart.onrender.com` so the
+   OpenAPI server list stops advertising `localhost:8080`.
+3. Redeploy Vercel so the corrected `vercel.json` values are baked into the JS
+   bundle; verify the bundle contains `bd-quickmart.onrender.com` and not the
+   suspended host.
+4. Re-run the section 7 checklist, including a real browser login.
+5. Update and rebuild the Flutter apps against the live URL (section 5).
 
 ---
 
@@ -182,30 +184,31 @@ choosing a compute plan is a billing decision you make in the dashboard.
    rewrites (`/(.*)` → `/index.html`, so `/orders`, `/riders` deep links work),
    security headers (HSTS, nosniff, etc.), **and a top-level `env` block** with
    the production `VITE_*` values so a deploy builds correctly out of the box:
-   - `VITE_API_BASE_URL=https://bd-quickmart-backend.onrender.com/api/v1`
-   - `VITE_WS_BASE_URL=wss://bd-quickmart-backend.onrender.com/ws/tracking`
+   - `VITE_API_BASE_URL=https://bd-quickmart.onrender.com/api/v1`
+   - `VITE_WS_BASE_URL=wss://bd-quickmart.onrender.com/ws/tracking`
    - `VITE_REQUEST_TIMEOUT=30000`
    - `VITE_IS_DEVELOPMENT=false`
 3. These can also/instead be set in Vercel **Production** environment variables
    (dashboard values override `vercel.json`). They are baked into the JS
-   bundle at build time — changing one requires a redeploy. Verified locally:
-   `VITE_API_BASE_URL=https://bd-quickmart-backend.onrender.com/api/v1` and
-   `VITE_IS_DEVELOPMENT=false` are present in the built bundle; the
-   `localhost:8080` strings that remain are only dead `??` fallbacks.
-   A local production build:
+   bundle at build time — changing one requires a redeploy. A local production
+   build:
    ```bash
    cd admin-web
-   VITE_API_BASE_URL=https://bd-quickmart-backend.onrender.com/api/v1 \
-   VITE_WS_BASE_URL=wss://bd-quickmart-backend.onrender.com/ws/tracking \
+   VITE_API_BASE_URL=https://bd-quickmart.onrender.com/api/v1 \
+   VITE_WS_BASE_URL=wss://bd-quickmart.onrender.com/ws/tracking \
    VITE_REQUEST_TIMEOUT=30000 VITE_IS_DEVELOPMENT=false \
    npm run build
    ```
+   After deploy, fetch the built JS asset and confirm it contains
+   `bd-quickmart.onrender.com` and NOT the suspended
+   `bd-quickmart-backend.onrender.com` host.
 4. `VITE_*` values are **public** by definition. **Never** put `JWT_SECRET`,
    DB credentials or AI keys there.
-5. Add the exact Vercel origin to `APP_CORS_ALLOWED_ORIGINS` on Render.
-   `WebConfig` uses `setAllowCredentials(true)` with an explicit origin list,
-   so `*` is invalid. **As of 2026-11-14 this is NOT done** — every
-   `vercel.app` origin returns `403` on preflight (see section 0).
+5. On Render set `APP_CORS_ALLOWED_ORIGINS=https://bdquickmart.vercel.app`
+   and redeploy. `WebConfig` uses `setAllowCredentials(true)` with an explicit
+   origin list, so `*` is invalid. The code default also includes this exact
+   origin so a fresh deploy is not broken if the env var is missing. Covered by
+   `CorsIntegrationTest` (7 tests).
 
 ---
 
@@ -234,10 +237,12 @@ flutter build apk --release \
   JWT is involved. `AppConfig` reads them at compile time; `ServerConfig`
   inherits that value as its default (a runtime QA override may still replace
   it per-device).
-- Verified in the built APKs: `bd-quickmart-backend.onrender.com` is present
-  and the fail-closed `.example.invalid` default is absent, i.e. the release
-  builds are genuinely production-wired. The `10.0.2.2` strings that remain
-  are dead debug-branch literals and login-screen hint text, not active URLs.
+- The release APKs currently in `build/` still contain the OLD, suspended
+  `bd-quickmart-backend.onrender.com` host. Before distributing them, update
+  both `dart-defines/production.json.example` files to
+  `https://bd-quickmart.onrender.com/api/v1` /
+  `wss://bd-quickmart.onrender.com/ws/tracking` and rebuild. The fail-closed
+  `.example.invalid` default is absent from the existing builds.
 - Release Android manifests omit `usesCleartextTraffic` (debug-only), so
   cleartext is correctly blocked.
 - **Release signing**: configure `android/app/build.gradle.kts` `signingConfigs`
@@ -272,10 +277,15 @@ Quick rules:
 
 ## 7. Post-deploy verification checklist
 
-- [ ] `GET https://bd-quickmart-backend.onrender.com/api/v1/health` → 200,
-      **`database: UP`** (currently `database: DOWN` — see section 0).
-- [ ] `GET /actuator/health/readiness` → `UP`; liveness → `UP` (liveness is
-      already `UP`).
+- [ ] `GET https://bd-quickmart.onrender.com/api/v1/health` → 200,
+      **`database: UP`** (observed UP on 2026-11-20).
+- [ ] `GET /actuator/health/readiness` → `UP`; liveness → `UP`.
+- [ ] `OPTIONS /api/v1/auth/login` with
+      `Origin: https://bdquickmart.vercel.app` → `200` with
+      `Access-Control-Allow-Origin: https://bdquickmart.vercel.app`;
+      an unknown origin → `403`.
+- [ ] Deployed Vercel JS bundle contains `bd-quickmart.onrender.com` and not the
+      suspended `bd-quickmart-backend.onrender.com`.
 - [ ] `/v3/api-docs` and `/swagger-ui.html` reachable; OpenAPI shows the real
       Render URL (`APP_PUBLIC_URL`) instead of `localhost:8080`.
 - [ ] Exactly one `SUPER_ADMIN` exists; `APP_BOOTSTRAP_ADMIN_ENABLED=false`.

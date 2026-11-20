@@ -22,14 +22,14 @@ from this repository.
 
 | Area | Weight | Verified | Status | Weighted |
 |---|---|---|---|---|
-| Backend | 20% | 90% | TESTED + DEPLOYED (DB DOWN) | 18.0% |
+| Backend | 20% | 92% | TESTED + DEPLOYED (DB UP) | 18.4% |
 | Supabase migration | 20% | 75% | IMPLEMENTED (live verify BLOCKED) | 15.0% |
-| Customer app | 12% | 95% | TESTED + BUILT (production URL) | 11.4% |
-| Rider app | 12% | 95% | TESTED + BUILT (production URL) | 11.4% |
-| Admin Web | 12% | 90% | BUILT (production VITE_ baked) | 10.8% |
-| Deployment | 12% | 70% | IMPLEMENTED + backend DEPLOYED | 8.4% |
-| Testing / E2E | 12% | 65% | PARTIAL (live HTTP/WSS/CORS probed) | 7.8% |
-| **Total** | **100%** | | | **82.8% → 83%** |
+| Customer app | 12% | 95% | TESTED + BUILT (old host — rebuild needed) | 11.4% |
+| Rider app | 12% | 95% | TESTED + BUILT (old host — rebuild needed) | 11.4% |
+| Admin Web | 12% | 92% | BUILT + DEPLOYED (production VITE_ baked) | 11.0% |
+| Deployment | 12% | 72% | IMPLEMENTED + backend DEPLOYED | 8.6% |
+| Testing / E2E | 12% | 70% | PARTIAL (live HTTP/WSS + CORS integration tests) | 8.4% |
+| **Total** | **100%** | | | **84.2% → 84%** |
 
 ### Status legend
 
@@ -39,19 +39,22 @@ from this repository.
 - **DEPLOYED** — a running, reachable deployed application was verified.
 - **BLOCKED** — an external prerequisite prevents further progress.
 
-The **backend** is now marked DEPLOYED: `https://bd-quickmart-backend.onrender.com`
-was verified live (liveness `200 UP`, `/api/v1/health` `200`, OpenAPI title
-"BD QuickMart API", WSS `101`). It is **degraded** — readiness/DB are `DOWN`.
-The Flutter apps and admin web are **not** deployed (no Vercel deploy / no
-device install was performed).
+The **backend** is DEPLOYED on the live service
+`https://bd-quickmart.onrender.com` (verified 2026-11-20: liveness `200 UP`,
+`/api/v1/health` `200` with **`database: UP`**, OpenAPI title "BD QuickMart
+API"). The older `bd-quickmart-backend.onrender.com` host is a **suspended**
+Render service (HTTP 503 "Service Suspended") and must not be used. The admin
+web is deployed at `https://bdquickmart.vercel.app`; the release APKs were
+built locally and still point at the old host (rebuild required).
 
 ---
 
-## 1. Backend — 90% — TESTED + DEPLOYED (DB DOWN)
+## 1. Backend — 92% — TESTED + DEPLOYED (DB UP)
 
 Spring Boot 3.5.6 / Java 21. `mvn -B clean verify` → **BUILD SUCCESS,
-56 tests, 0 failures, 0 errors, 9 skipped** (the 9 are real-PostgreSQL
-Testcontainers tests, skipped because Docker is unavailable).
+63 tests, 0 failures, 0 errors, 9 skipped** (the 9 are real-PostgreSQL
+Testcontainers tests, skipped because Docker is unavailable). The 7 new
+`CorsIntegrationTest` cases cover the exact production preflight contract.
 
 - Registration / login, JWT access + refresh, **refresh rotation + replay
   rejection**, logout / token revocation, `/me` — full-stack MockMvc integration
@@ -60,19 +63,25 @@ Testcontainers tests, skipped because Docker is unavailable).
   authorization, privileged provisioning — covered by the same suite.
 - CORS (`WebConfig`/`SecurityConfig`), WebSocket auth, liveness vs readiness,
   Render `PORT` binding, production-safe config, `RealHttpSmokeTest`,
-  portable JPA entities — implemented and tested.
-- **Live probes this run (2026-11-14/15):**
-  - `/actuator/health/liveness` → `200 {"status":"UP"}` (cold start ~59 s).
-  - `/api/v1/health` → `200`, app `UP`, **`database: DOWN`**.
-  - `/actuator/health` / `/actuator/health/readiness` → `503`, `db: DOWN`
-    (`CannotGetJdbcConnectionException`).
-  - `/v3/api-docs` → `200`, title **"BD QuickMart API"**, 13 paths.
-  - `wss://…/ws/tracking` handshake → **`101 Switching Protocols`**.
-  - CORS preflight: `localhost:5173`/`3000` → `200`; `vercel.app` origins → `403`.
-  - OpenAPI `servers` still `http://localhost:8080` (`APP_PUBLIC_URL` stale).
+  portable JPA entities — implemented and tested. Exact production admin origin
+  `https://bdquickmart.vercel.app` added to the explicit allowlist (no wildcard,
+  credentials enabled); methods are `GET,POST,PUT,PATCH,DELETE,OPTIONS`, headers
+  include `Content-Type`/`Authorization`.
+- **Live probes this run (2026-11-20):**
+  - `/actuator/health/liveness` on the live host → `200 {"status":"UP"}`.
+  - `/api/v1/health` on the live host → `200`, app `UP`, **`database: UP`**.
+  - `/v3/api-docs` → `200`, title **"BD QuickMart API"**.
+  - `OPTIONS /api/v1/auth/login` from `https://bdquickmart.vercel.app` → `403
+    Invalid CORS request` **before the fix** (Spring `CorsFilter`); from
+    `http://localhost:5173` → `200` with `Access-Control-Allow-*` (proves the
+    mechanism).
+  - `GET` on suspended `bd-quickmart-backend.onrender.com` → `503` **"Service
+    Suspended"** with `x-render-routing: suspend` — the actual source of the
+    reported preflight 503 (Render, not Spring Boot).
 
-**Why not 100%:** the live database is DOWN, so live auth/RBAC/persistence E2E
-is impossible; `APP_PUBLIC_URL` and production CORS are misconfigured on Render.
+**Why not 100%:** a live re-check of the preflight after the Render/Vercel
+redeploy is still required (local MockMvc tests pass); `APP_PUBLIC_URL` remains
+stale until set in the Render dashboard.
 
 ## 2. Supabase migration — 75% — IMPLEMENTED (live verification BLOCKED)
 
@@ -103,12 +112,12 @@ tests **only**; it is explicitly **NOT** claimed as verified on live PG.
   → **`customer-app/build/app/outputs/flutter-apk/app-release.apk` (47.1 MB)**.
 - Registration, login, secure token storage, session restoration, silent
   single-flight refresh, logout, error handling, API integration — tested.
-- **Production URL now real and verified in the APK:**
-  `https://bd-quickmart-backend.onrender.com/api/v1` / `wss://…/ws/tracking`,
-  `IS_DEVELOPMENT=false`. Confirmed by constant-resolution check and by APK
-  inspection: production host present (3×), fail-closed `.example.invalid`
-  default absent (0×). `10.0.2.2` strings that remain are dead dev-branch
-  literals / hint text, not active URLs.
+- **Config still points at the old suspended host.**
+  `dart-defines/production.json.example` and the APK both contain
+  `https://bd-quickmart-backend.onrender.com/api/v1` / the matching WSS URL
+  with `IS_DEVELOPMENT=false`. **Both must be updated to the live host and the
+  APK rebuilt** before distribution (out of scope for the admin CORS fix).
+  `10.0.2.2` strings that remain are dead dev-branch literals / hint text.
 - Application ID **preserved**: `com.bdquickmart.customer_app` (no change to
   `build.gradle.kts`).
 
@@ -123,54 +132,64 @@ tests **only**; it is explicitly **NOT** claimed as verified on live PG.
 - PENDING / approved / rejected behaviour (test: "pending rider gets a pending
   session; approval promotes it"), secure storage, session restore, refresh,
   logout — implemented/tested.
-- Same real production HTTPS/WSS config + `IS_DEVELOPMENT=false`, verified in
-  the APK. Application ID **preserved**: `com.bdquickmart.rider_app`.
+- Same HTTPS/WSS config + `IS_DEVELOPMENT=false` pattern; the built APK still
+  points at the old suspended host and needs the same rebuild. Application ID
+  **preserved**: `com.bdquickmart.rider_app`.
 
 **Why not 100%:** same no-live-E2E / debug-signing caveat as the customer app.
 
-## 5. Admin Web — 90% — BUILT (production VITE_ baked)
+## 5. Admin Web — 92% — BUILT + DEPLOYED (production VITE_ baked)
 
 - `npm run lint` (oxlint) → **0 warnings, 0 errors**; `npm run build`
   (`tsc -b && vite build`) → **success** (98 modules) with production env.
-- **Production values baked and verified in the bundle:**
-  `VITE_API_BASE_URL=https://bd-quickmart-backend.onrender.com/api/v1`,
-  `VITE_WS_BASE_URL=wss://bd-quickmart-backend.onrender.com/ws/tracking`,
-  `VITE_IS_DEVELOPMENT=false`, `VITE_REQUEST_TIMEOUT=30000`. The only
-  `localhost:8080` strings left are dead `??` fallbacks.
+- **Production values baked and verified in the local production bundle:**
+  `VITE_API_BASE_URL=https://bd-quickmart.onrender.com/api/v1`,
+  `VITE_WS_BASE_URL=wss://bd-quickmart.onrender.com/ws/tracking`,
+  `VITE_IS_DEVELOPMENT=false`, `VITE_REQUEST_TIMEOUT=30000`. Verified the old
+  suspended host is absent from the rebuilt bundle. The only `localhost:8080`
+  strings left are dead `??` fallbacks.
 - `vercel.json`: Vite preset, `npm ci` / build / `dist`, **top-level `env`
   block with the four public `VITE_*` values**, SPA fallback rewrites, security
   headers. No secret in any `VITE_*` value.
 - Login, session, protected routes (`RequireAuth`/`RequireRole`), RBAC, rider
   approve/reject, Axios envelope + single-flight refresh — implemented.
+- **Live finding:** the *deployed* Vercel bundle still contained
+  `bd-quickmart-backend.onrender.com` (a suspended service → HTTP 503 on the
+  preflight). `vercel.json` is now corrected; a Vercel redeploy and a real
+  browser login are still required. The live host's `403` CORS rejection is
+  addressed by the explicit allowlist + `CorsIntegrationTest`.
 
-**Why not 100%:** not deployed to Vercel; no real-browser CORS/deep-link E2E
-(backend currently returns `403` to `vercel.app` origins).
+**Why not 100%:** no real-browser CORS/deep-link E2E after redeploy; Render
+`APP_CORS_ALLOWED_ORIGINS` / `APP_PUBLIC_URL` must be confirmed in the dashboard.
 
-## 6. Deployment — 70% — IMPLEMENTED + backend DEPLOYED
+## 6. Deployment — 72% — IMPLEMENTED + backend/frontend DEPLOYED
 
-- **Backend is deployed and reachable on Render** (verified live, section 1),
-  though degraded (DB DOWN). This is an external operator deployment, not one
-  performed from this repository.
+- **Backend is deployed and reachable on the live Render service** (verified
+  2026-11-20: liveness `200 UP`, `/api/v1/health` `200` with `database: UP`).
+  This is an external operator deployment, not one performed from this repo.
+- **Admin web is deployed at `https://bdquickmart.vercel.app`**, but the
+  deployed bundle still used the suspended host until a redeploy of the
+  corrected `vercel.json` (done in this change).
 - Prepared: `render.yaml` (Docker/Java 21, region, liveness health check,
   secret env var names, `PORT`, `SPRING_FLYWAY_ENABLED=false`),
   `backend/Dockerfile`, `admin-web/vercel.json` (+ production `env`),
   `.env.example` files, `docs/development/DEPLOYMENT.md`,
   `environment-variables.md`, `infrastructure/database/postgres/*`.
-- All three clients configured with the confirmed production URL.
+- Admin web uses the live URL; the Flutter apps still use the old suspended
+  host and must be rebuilt (separate scope).
 
-**Why not 100%:** admin web not deployed to Vercel; Render dashboard values
-(`SUPABASE_DATABASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_PUBLIC_URL`) need
-operator correction; no authenticated cloud tools available here.
+**Why not 100%:** Render dashboard values (`APP_CORS_ALLOWED_ORIGINS`,
+`APP_PUBLIC_URL`) need operator confirmation; Vercel redeploy and real-browser
+login verification are pending; no authenticated cloud tools available here.
 
-## 7. Testing / E2E — 65% — PARTIAL
+## 7. Testing / E2E — 70% — PARTIAL
 
-**Passing this run:** 56 backend tests, 14 customer tests, 16 rider tests,
-admin-web lint, all production builds, both release APKs, `FlywayMigrationSqlTest`,
-parser + EPP unit tests, **live HTTP/health/OpenAPI/WSS/CORS probes**, and APK
-+ bundle production-URL verification.
+**Passing this run:** 63 backend tests (including the new 7-case
+`CorsIntegrationTest`), 14 customer tests, 16 rider tests, admin-web lint, all
+production builds, both release APKs, `FlywayMigrationSqlTest`, parser + EPP
+unit tests, live HTTP/health/OpenAPI probes, and bundle host verification.
 **Not obtained:** real-PostgreSQL Testcontainers suite (skipped, no Docker),
-live auth/E2E against the deployed backend (DB DOWN), browser Vercel CORS E2E
-(preflight 403), device/cellular Flutter E2E.
+real-browser Vercel CORS/login E2E after redeploy, device/cellular Flutter E2E.
 
 ### End-to-end flow matrix
 
@@ -185,85 +204,80 @@ live auth/E2E against the deployed backend (DB DOWN), browser Vercel CORS E2E
 | 7 | Role-based restrictions | TESTED (H2 full-stack) | `AuthIntegrationTest` / role gates |
 | 8 | Refresh rotation | TESTED (H2 + unit) | `AuthIntegrationTest`, single-flight refresh test |
 | 9 | Logout / token revocation | TESTED (H2 + widget) | `AuthIntegrationTest`, Flutter `auth_test.dart` |
-| 10 | PostgreSQL persistence | **BLOCKED** | live DB DOWN; Testcontainers skipped; H2 only |
-| 11 | Admin Web API connectivity | PARTIAL / BLOCKED | backend HTTP `200`, but CORS `403`; Vercel not deployed |
-| 12 | Flutter API connectivity | PARTIAL | APKs wired to real URL; no device E2E; live DB DOWN |
-| 13 | WebSocket connectivity | **TESTED (live)** | `101 Switching Protocols` on `wss://…/ws/tracking` |
-| 14 | Backend health & readiness | TESTED (live + H2) | liveness UP / readiness DOWN (DB), `HealthControllerTest` |
+| 10 | PostgreSQL persistence | LIVE DB UP (no authenticated E2E) | `/api/v1/health` `database: UP`; Testcontainers skipped; H2 tests pass |
+| 11 | Admin Web API connectivity | FIXED IN CODE, redeploy pending | `vercel.json` → live host; `CorsIntegrationTest` 7/7; deployed bundle still stale |
+| 12 | Flutter API connectivity | PARTIAL | APKs wired to the OLD suspended host; rebuild required; no device E2E |
+| 13 | WebSocket connectivity | TRANSPORT REACHABLE (live) | earlier `101 Switching Protocols` on the now-suspended host; recheck on live host |
+| 14 | Backend health & readiness | TESTED (live + H2) | live host liveness UP, `/api/v1/health` `database: UP`, `HealthControllerTest` |
+| 15 | CORS preflight (admin origin) | TESTED (mock), live recheck pending | `CorsIntegrationTest`: prod origin 200, unknown/wildcard/TRACE 403, protected-route preflight 200, 401 carries CORS headers |
 
 ---
 
 ## Blockers (exact)
 
-1. **Deployed backend database is DOWN (highest priority).** Live
-   `/api/v1/health` returns `database: DOWN`; `/actuator/health/readiness` is
-   `503` with `CannotGetJdbcConnectionException`. Root cause matches the earlier
-   finding: the root `.env` `SUPABASE_DATABASE_URL` (Session Pooler,
-   `aws-1-ap-northeast-1`) is reachable over TCP/TLS but returns
-   `FATAL: password authentication failed for user "postgres"` — the
-   **password is wrong/stale** (likely rotated/reset). No SQL inspection,
-   migration application, role creation or live-PG E2E is possible.
-2. **Production CORS not configured.** The deployed backend allows only
-   `http://localhost:5173` and `http://localhost:3000`; every `vercel.app`
-   origin returns `403` on preflight. `APP_CORS_ALLOWED_ORIGINS` must be set in
-   the Render dashboard (wildcards invalid with `setAllowCredentials(true)`).
-3. **`APP_PUBLIC_URL` stale.** OpenAPI `servers` still advertise
-   `http://localhost:8080`.
-4. **No Docker / no local PostgreSQL.** `PostgresMigrationIntegrationTest`
+1. **Redeploy required for the admin CORS fix (highest priority).** The code
+   and `vercel.json` changes are local only. Render must have
+   `APP_CORS_ALLOWED_ORIGINS` set and Vercel must rebuild, otherwise the live
+   preflight still fails (403 on the live host, 503 on the suspended host).
+2. **`APP_PUBLIC_URL` stale.** OpenAPI `servers` still advertise
+   `http://localhost:8080`; set it to `https://bd-quickmart.onrender.com`.
+3. **Admin bundle on Vercel is stale.** It still bakes in the suspended
+   `bd-quickmart-backend.onrender.com` host; a Vercel redeploy is required.
+4. **Flutter apps point at the suspended host.** Both `dart-defines` examples
+   and both built APKs must be updated and rebuilt (separate scope).
+5. **No Docker / no local PostgreSQL.** `PostgresMigrationIntegrationTest`
    (9 tests) skipped; real-PG dialect verification cannot be produced locally.
-5. **No authenticated cloud deployment tools.** Admin web not deployed to
-   Vercel; Render dashboard values cannot be changed from here.
-6. **Production DDL / role changes not auto-applied.** Prepared as templates
+6. **No authenticated cloud deployment tools.** The Render/Vercel dashboard
+   changes and a real-browser login test cannot be performed from here.
+7. **Production DDL / role changes not auto-applied.** Prepared as templates
    only; they change production permissions/schema and require approval.
-7. **Release signing not configured.** Both APKs are debug-signed (no
+8. **Release signing not configured.** Both APKs are debug-signed (no
    keystore/`key.properties`), fine for internal testing, not for Play Store.
 
 ## Exact manual actions required
 
-1. **Fix the DB credential (unblocks most of the remainder).** In Supabase →
-   Project Settings → Database, reset/confirm the DB password, copy the
-   **current** Session Pooler URI, and update the Render
-   `SUPABASE_DATABASE_URL` secret (and the git-ignored root `.env`). Recheck
-   `/actuator/health/readiness` → `UP`.
-2. **Apply the schema** (fresh DB) from `backend/` using the **Direct**
-   connection + DDL migration role:
-   `mvn -B flyway:migrate -Dflyway.url="$DB_MIGRATION_URL" -Dflyway.user="$DB_MIGRATION_USERNAME" -Dflyway.password="$DB_MIGRATION_PASSWORD"`,
-   then `flyway:validate`. Verify with
-   `infrastructure/database/postgres/02_verify_schema.sql`.
-3. **Create the least-privilege runtime role** (approval required): run
-   `infrastructure/database/postgres/01_create_app_role_TEMPLATE.sql` once.
-4. **Correct Render dashboard values:** set `APP_CORS_ALLOWED_ORIGINS` to the
-   exact Vercel production origin, and
-   `APP_PUBLIC_URL=https://bd-quickmart-backend.onrender.com`.
-5. **Deploy admin web to Vercel** (Root Directory `admin-web`; `vercel.json`
-   already carries the production `VITE_*` values). Add the Vercel origin to
-   CORS. Re-run the section 7 checklist.
-6. **Run real-PostgreSQL tests** in CI with Docker.
-7. **Sign the release APKs** from CI secrets (or use the debug-signed artifacts
-   for internal testing), then verify on a physical device over cellular.
-8. **Re-run the E2E matrix** against the fully healthy deployed stack.
+1. **Render — set CORS + public URL, then redeploy.** In the Render dashboard
+   for the live service `bd-quickmart`:
+   `APP_CORS_ALLOWED_ORIGINS=https://bdquickmart.vercel.app` and
+   `APP_PUBLIC_URL=https://bd-quickmart.onrender.com`. Redeploy and confirm
+   `OPTIONS /api/v1/auth/login` with that Origin returns `200`.
+2. **Vercel — redeploy the admin web** (Root Directory `admin-web`) so the
+   corrected `vercel.json` is baked into the JS bundle; confirm the deployed
+   asset contains `bd-quickmart.onrender.com` and not the suspended host.
+3. **Real browser login** from `https://bdquickmart.vercel.app` over HTTPS;
+   confirm no CORS error and a successful `/api/v1/auth/login`.
+4. **Flutter — update and rebuild** both `dart-defines/production.json.example`
+   files to the live URL and rebuild both release APKs (separate scope).
+5. **Run real-PostgreSQL tests** in CI with Docker.
+6. **Sign the release APKs** from CI secrets (or use debug-signed artifacts for
+   internal testing), then verify on a physical device over cellular.
+7. **Re-run the E2E matrix** against the fully healthy deployed stack.
 
 ## Deployment state
 
-- **Backend: deployed & reachable (degraded).**
-  `https://bd-quickmart-backend.onrender.com` — liveness UP, HTTP/WSS reachable,
-  **database DOWN**. Deployed externally by the operator, not from this repo.
-- **Admin web: NOT deployed.** `vercel.json` + production `VITE_*` are ready.
-- **Flutter apps: NOT deployed** (APK artifacts built locally only).
-- Do not treat a successful local build as a successful deployment; do not
-  treat a live-but-DB-down backend as a fully working system.
+- **Backend: deployed & reachable (healthy).**
+  `https://bd-quickmart.onrender.com` — liveness UP, `/api/v1/health` 200 with
+  `database: UP`. Deployed externally by the operator, not from this repo.
+  The older `bd-quickmart-backend.onrender.com` is a suspended service.
+- **Admin web: deployed at `https://bdquickmart.vercel.app`** with a stale
+  bundle; Vercel redeploy with the corrected `vercel.json` is pending.
+- **Flutter apps: not deployed** (APK artifacts built locally, still pointing
+  at the suspended host; rebuild pending).
+- Do not treat a successful local build as a successful deployment.
 
 ## Production URL used (this run)
 
-Confirmed by the operator and verified live:
-- Base: `https://bd-quickmart-backend.onrender.com`
-- API: `https://bd-quickmart-backend.onrender.com/api/v1`
-- WebSocket: `wss://bd-quickmart-backend.onrender.com/ws/tracking`
+Live service verified 2026-11-20:
+- Base: `https://bd-quickmart.onrender.com`
+- API: `https://bd-quickmart.onrender.com/api/v1`
+- WebSocket: `wss://bd-quickmart.onrender.com/ws/tracking`
+- Admin origin allowed in CORS: `https://bdquickmart.vercel.app`
 
-Applied to: `customer-app/dart-defines/production.json.example`,
-`rider-app/dart-defines/production.json.example`, both apps' `.env.example`,
-`admin-web/vercel.json` (`env`), `admin-web/.env.example`, `render.yaml`
-(comments), `DEPLOYMENT.md`. It is a **public URL**, not a secret.
+Applied in this change to `admin-web/vercel.json` (`env`),
+`admin-web/.env.example`, `backend/src/main/resources/application.yml`,
+`WebConfig`, `render.yaml` (comments), `DEPLOYMENT.md` and
+`environment-variables.md`. The Flutter examples/APKs still use the old host.
+These are **public URLs**, not secrets.
 
 ## Secret handling (this run)
 

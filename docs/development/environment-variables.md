@@ -198,24 +198,25 @@ loads the page.
 
 ---
 
-## 5. Production overrides (2026-11-15)
+## 5. Production overrides (2026-11-20)
 
-The defaults above are **local development** values. The confirmed production
-backend is `https://bd-quickmart-backend.onrender.com` (public URL, not a
-secret). Production build values, already wired in this repository:
+The defaults above are **local development** values. The live production
+backend is `https://bd-quickmart.onrender.com` (public URL, not a secret). The
+older `bd-quickmart-backend.onrender.com` host is a **suspended** Render service
+(HTTP 503) and must not be used. Production build values wired in this repo:
 
 | Variable | Production value |
 |---|---|
-| `API_BASE_URL` / `VITE_API_BASE_URL` | `https://bd-quickmart-backend.onrender.com/api/v1` |
-| `WS_BASE_URL` / `VITE_WS_BASE_URL` | `wss://bd-quickmart-backend.onrender.com/ws/tracking` |
+| `API_BASE_URL` / `VITE_API_BASE_URL` | `https://bd-quickmart.onrender.com/api/v1` |
+| `WS_BASE_URL` / `VITE_WS_BASE_URL` | `wss://bd-quickmart.onrender.com/ws/tracking` |
 | `IS_DEVELOPMENT` / `VITE_IS_DEVELOPMENT` | `false` |
-| `APP_PUBLIC_URL` (Render) | `https://bd-quickmart-backend.onrender.com` |
-| `APP_CORS_ALLOWED_ORIGINS` (Render) | must include the exact Vercel origin (currently only localhost is allowed — see `DEPLOYMENT.md` §0) |
+| `APP_PUBLIC_URL` (Render) | `https://bd-quickmart.onrender.com` |
+| `APP_CORS_ALLOWED_ORIGINS` (Render) | `https://bdquickmart.vercel.app` (exact admin origin; also in the code default) |
 
-Both Flutter apps ship these via
-`dart-defines/production.json.example` (`--dart-define-from-file`); the admin
-web ships them via `vercel.json`'s `env` block / Vercel dashboard. `.env` files
-remain git-ignored — never commit them or any secret.
+The admin web ships the client values via `vercel.json`'s `env` block / Vercel
+dashboard. The Flutter apps' `dart-defines/production.json.example` files still
+contain the old suspended host and **must be updated and rebuilt** before
+distribution. `.env` files remain git-ignored — never commit them or any secret.
 
 ---
 
