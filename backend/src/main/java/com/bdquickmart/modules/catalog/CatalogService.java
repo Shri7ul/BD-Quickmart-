@@ -164,11 +164,13 @@ public class CatalogService {
                 .toList();
     }
 
-    /** Products visible to customers: live, available, with stock > 0. */
+    /**
+     * Products visible to customers: live and available. Out-of-stock products stay
+     * listed with {@code inStock=false} so clients can render an "Out of stock"
+     * state; checkout still rejects them via the stock check in OrderService.
+     */
     public List<ProductResponse> listCustomerProducts(String search, Long categoryId) {
-        return listProducts(search, categoryId, true).stream()
-                .filter(ProductResponse::inStock)
-                .toList();
+        return listProducts(search, categoryId, true);
     }
 
     public ProductResponse toResponse(ProductEntity product) {

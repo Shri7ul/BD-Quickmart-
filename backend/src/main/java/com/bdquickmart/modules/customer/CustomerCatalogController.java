@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Customer-facing catalogue. Only live, available, in-stock products appear. */
+/** Customer-facing catalogue. Only live, available products are exposed; stock is reported, not filtered. */
 @RestController
 @RequestMapping("/api/v1/customer")
 @Tag(name = "Customer catalog", description = "Browse categories and products")
@@ -42,11 +42,6 @@ public class CustomerCatalogController {
     @GetMapping("/products/{publicId}")
     public ApiResponse<ProductResponse> product(@PathVariable String publicId,
                                                  HttpServletRequest request) {
-        ProductResponse product = catalogService.getProduct(publicId);
-        if (!product.inStock()) {
-            throw new com.bdquickmart.common.exception.BusinessException(
-                    com.bdquickmart.common.api.ApiCode.CONFLICT, "Product is not available");
-        }
-        return ApiResponses.success(product, request);
+        return ApiResponses.success(catalogService.getProduct(publicId), request);
     }
 }

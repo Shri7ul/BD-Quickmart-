@@ -13,6 +13,9 @@ import com.bdquickmart.modules.catalog.CategoryRepository;
 import com.bdquickmart.modules.catalog.dto.ProductRequest;
 import com.bdquickmart.modules.inventory.dto.StockAdjustmentRequest;
 import com.bdquickmart.modules.inventory.dto.StockUpdateRequest;
+import com.bdquickmart.modules.order.dto.CartItemRequest;
+import com.bdquickmart.modules.order.dto.CheckoutRequest;
+import java.util.List;
 import com.bdquickmart.modules.user.AccountStatus;
 import com.bdquickmart.modules.user.UserEntity;
 import com.bdquickmart.modules.user.UserRole;
@@ -74,11 +77,16 @@ class CatalogInventoryIntegrationTest extends BaseIntegrationTest {
 
     private String createProduct(String adminToken, Long categoryId, String name, String price)
             throws Exception {
+        return createProduct(adminToken, categoryId, name, price, true);
+    }
+
+    private String createProduct(String adminToken, Long categoryId, String name, String price,
+                                 boolean available) throws Exception {
         String response = mockMvc.perform(post("/api/v1/admin/products")
                         .header(HttpHeaders.AUTHORIZATION, auth(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(new ProductRequest(name, "Desc", name.toUpperCase(),
-                                categoryId, new BigDecimal(price), null, null, true))))
+                                categoryId, new BigDecimal(price), null, null, available))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(response).get("data").get("publicId").asText();
@@ -110,18 +118,29 @@ class CatalogInventoryIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("2. Stock updates drive customer visibility and produce an audit trail")
+    @DisplayName("2. Admin-created product is listed immediately; stock only drives the inStock flag")
     void stockDrivesCustomerCatalog() throws Exception {
         String admin = token(UserRole.ADMIN, AccountStatus.ACTIVE, "admin@stock.test");
         String customer = token(UserRole.CUSTOMER, AccountStatus.ACTIVE, "customer@stock.test");
         String categoryPublicId = createCategory(admin, "Vegetables");
         String productPublicId = createProduct(admin, categoryId(admin, categoryPublicId), "Tomato", "40.00");
 
-        // No stock yet: product is hidden from customers.
+        // REGRESSION: a product created from Admin is visible at once. It starts with
+        // zero stock, so inStock is false — the app renders its "Out of stock" state.
         mockMvc.perform(get("/api/v1/customer/products")
                         .header(HttpHeaders.AUTHORIZATION, auth(customer)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(0));
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].publicId").value(productPublicId))
+                .andExpect(jsonPath("$.data[0].stockQuantity").value(0))
+                .andExpect(jsonPath("$.data[0].inStock").value(false))
+                .andExpect(jsonPath("$.data[0].available").value(true));
+
+        // The detail endpoint must also load so the client can show the unavailable state.
+        mockMvc.perform(get("/api/v1/customer/products/{id}", productPublicId)
+                        .header(HttpHeaders.AUTHORIZATION, auth(customer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.inStock").value(false));
 
         mockMvc.perform(put("/api/v1/admin/inventory/{id}/stock", productPublicId)
                         .header(HttpHeaders.AUTHORIZATION, auth(admin))
@@ -135,6 +154,7 @@ class CatalogInventoryIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].inStock").value(true))
+                .andExpect(jsonPath("$.data[0].stockQuantity").value(10))
                 .andExpect(jsonPath("$.data[0].effectivePrice").value(40.00));
 
         mockMvc.perform(post("/api/v1/admin/inventory/{id}/adjust", productPublicId)
@@ -168,6 +188,47 @@ class CatalogInventoryIntegrationTest extends BaseIntegrationTest {
                         .delete("/api/v1/admin/categories/{id}", categoryPublicId)
                         .header(HttpHeaders.AUTHORIZATION, auth(admin)))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    @DisplayName("5. Unavailable products stay hidden from customers without exposing stock")
+    void unavailableProductsRemainHidden() throws Exception {
+        String admin = token(UserRole.ADMIN, AccountStatus.ACTIVE, "admin@hidden.test");
+        String customer = token(UserRole.CUSTOMER, AccountStatus.ACTIVE, "customer@hidden.test");
+        String categoryPublicId = createCategory(admin, "Hidden goods");
+        Long categoryId = categoryId(admin, categoryPublicId);
+        createProduct(admin, categoryId, "Visible", "10.00", true);
+        String hidden = createProduct(admin, categoryId, "Hidden", "20.00", false);
+
+        mockMvc.perform(get("/api/v1/customer/products")
+                        .header(HttpHeaders.AUTHORIZATION, auth(customer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("Visible"));
+
+        // Still an admin record; only the customer projection suppresses it.
+        mockMvc.perform(get("/api/v1/admin/products/{id}", hidden)
+                        .header(HttpHeaders.AUTHORIZATION, auth(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.available").value(false));
+    }
+
+    @Test
+    @DisplayName("6. Out-of-stock checkout is still rejected by the server")
+    void outOfStockCheckoutRejected() throws Exception {
+        String admin = token(UserRole.ADMIN, AccountStatus.ACTIVE, "admin@oos.test");
+        String customer = token(UserRole.CUSTOMER, AccountStatus.ACTIVE, "customer@oos.test");
+        String categoryPublicId = createCategory(admin, "Out of stock goods");
+        String product = createProduct(admin, categoryId(admin, categoryPublicId), "Empty", "30.00");
+
+        CheckoutRequest request = new CheckoutRequest("idem-oos-1",
+                List.of(new CartItemRequest(product, 1)),
+                "123 Main Street, Dhaka", "01700000000", null, "COD");
+        mockMvc.perform(post("/api/v1/customer/checkout")
+                        .header(HttpHeaders.AUTHORIZATION, auth(customer))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(request)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value(ApiCode.CONFLICT.getCode()));
     }
 
     @Test
