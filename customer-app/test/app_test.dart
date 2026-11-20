@@ -6,21 +6,29 @@ import 'package:customer_app/core/storage/key_value_store.dart';
 import 'package:customer_app/core/storage/token_storage.dart';
 import 'package:customer_app/features/auth/data/auth_api.dart';
 import 'package:customer_app/features/auth/state/auth_controller.dart';
+import 'package:customer_app/features/cart/state/cart_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Builds a fully in-memory auth graph so widget tests never touch plugin
 /// channels (secure storage / shared_preferences) or the network.
-({AuthController auth, ServerConfig config}) buildTestGraph() {
+({AuthController auth, ServerConfig config, ApiClient apiClient, CartController cart})
+    buildTestGraph() {
   final ServerConfig config = ServerConfig(InMemoryKeyValueStore());
+  final ApiClient apiClient = ApiClient(serverConfig: config);
   final AuthController auth = AuthController(
     authApi: AuthApi(config),
-    apiClient: ApiClient(serverConfig: config),
+    apiClient: apiClient,
     tokenStorage: InMemoryTokenStorage(),
     allowedRole: 'CUSTOMER',
   );
   auth.attach();
-  return (auth: auth, config: config);
+  return (
+    auth: auth,
+    config: config,
+    apiClient: apiClient,
+    cart: CartController(InMemoryKeyValueStore()),
+  );
 }
 
 void main() {
@@ -30,7 +38,12 @@ void main() {
     await graph.auth.bootstrap(); // empty storage -> unauthenticated
 
     await tester.pumpWidget(
-      CustomerApp(auth: graph.auth, serverConfig: graph.config),
+      CustomerApp(
+        auth: graph.auth,
+        serverConfig: graph.config,
+        apiClient: graph.apiClient,
+        cart: graph.cart,
+      ),
     );
     await tester.pumpAndSettle();
 

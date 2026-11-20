@@ -1,15 +1,11 @@
 /**
  * Shared domain types for the admin web application.
  *
- * These mirror the backend contracts introduced by the goals that own each
- * feature. They are intentionally narrow for Goal 01 and expand as the
- * corresponding modules are implemented.
+ * These mirror the Phase 1 backend contracts exactly: external IDs are
+ * publicId strings, money comes back as JSON numbers from NUMERIC(12,2),
+ * and order status uses the canonical server-defined lifecycle.
  */
 
-/**
- * The six canonical roles defined by the backend auth module (Goal 02).
- * Identifiers are shared verbatim with the database, JWT claims and apps.
- */
 export type UserRole =
   | 'CUSTOMER'
   | 'RIDER'
@@ -18,10 +14,8 @@ export type UserRole =
   | 'STORE_MANAGER'
   | 'INVENTORY_OPERATOR';
 
-/** Account lifecycle state (Goal 02). */
 export type AccountStatus = 'ACTIVE' | 'PENDING' | 'REJECTED' | 'DISABLED';
 
-/** Authenticated operator profile, mirroring the backend UserResponse. */
 export interface AuthenticatedUser {
   publicId: string;
   fullName: string;
@@ -31,13 +25,11 @@ export interface AuthenticatedUser {
   status: AccountStatus;
 }
 
-/** Login accepts either an email address or a phone number. */
 export interface LoginRequest {
   identifier: string;
   password: string;
 }
 
-/** Token pair returned by POST /auth/login and POST /auth/refresh. */
 export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
@@ -46,7 +38,6 @@ export interface AuthResponse {
   user: AuthenticatedUser;
 }
 
-/** Order lifecycle status. */
 export type OrderStatus =
   | 'PENDING'
   | 'CONFIRMED'
@@ -60,58 +51,105 @@ export type OrderStatus =
   | 'REJECTED'
   | 'FAILED_DELIVERY';
 
-/** Compact order row shown in the admin order table. */
-export interface OrderSummary {
-  id: string;
-  customerName: string;
-  storeName: string;
-  totalAmount: number;
-  status: OrderStatus;
+export interface Category {
+  id: number;
+  publicId: string;
+  name: string;
+  description: string | null;
+  imageUrl: string | null;
+  active: boolean;
   createdAt: string;
 }
 
-/** Dark store entity. */
-export interface Store {
-  id: string;
-  name: string;
-  address: string;
-  serviceRadiusKm: number;
-  isActive: boolean;
-}
-
-/** Product entity. */
 export interface Product {
-  id: string;
+  publicId: string;
   name: string;
-  nameBn: string;
-  sku: string;
-  categoryId: string;
+  description: string | null;
+  sku: string | null;
+  categoryId: number | null;
+  categoryName: string | null;
   basePrice: number;
-  isAvailable: boolean;
+  discountPrice: number | null;
+  effectivePrice: number;
+  imageUrl: string | null;
+  available: boolean;
+  stockQuantity: number;
+  inStock: boolean;
 }
 
-/** Inventory position for a product at a given store. */
-export interface InventoryLevel {
-  productId: string;
-  storeId: string;
+export interface InventoryRow {
+  productPublicId: string | null;
+  productName: string | null;
+  sku: string | null;
   quantityOnHand: number;
   reorderThreshold: number;
-  nearestExpiryDate: string | null;
+  lowStock: boolean;
+  updatedAt: string;
 }
 
-/** Rider entity. */
-export interface Rider {
-  id: string;
+export interface Adjustment {
+  publicId: string;
+  delta: number;
+  quantityAfter: number;
+  reason: string;
+  reference: string | null;
+  createdAt: string;
+}
+
+export interface OrderItem {
+  productPublicId: string;
+  productName: string;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+}
+
+export interface OrderEvent {
+  status: OrderStatus;
+  at: string;
+  note: string | null;
+}
+
+export interface Order {
+  publicId: string;
+  status: OrderStatus;
+  subtotalAmount: number;
+  discountAmount: number;
+  deliveryFee: number;
+  totalAmount: number;
+  paymentMethod: string;
+  deliveryAddress: string;
+  contactPhone: string;
+  notes: string | null;
+  customerPublicId: string | null;
+  customerName: string;
+  riderPublicId: string | null;
+  riderName: string | null;
+  items: OrderItem[];
+  events: OrderEvent[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RiderEligibility {
+  publicId: string;
   fullName: string;
   phone: string;
-  status: 'OFFLINE' | 'ONLINE' | 'BUSY';
-  completedDeliveries: number;
+  status: AccountStatus;
+  online: boolean;
 }
 
-/** Aggregated dashboard metrics. */
 export interface DashboardSummary {
   totalOrders: number;
-  totalRevenue: number;
+  pendingOrders: number;
+  revenue: number;
   activeRiders: number;
   lowStockItems: number;
+  recentOrders: Array<{
+    publicId: string;
+    customerName: string;
+    status: OrderStatus;
+    totalAmount: number;
+    createdAt: string;
+  }>;
 }

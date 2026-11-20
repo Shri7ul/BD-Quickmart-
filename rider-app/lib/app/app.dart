@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../core/config/server_config.dart';
 import '../core/localization/app_localizations.dart';
+import '../core/network/api_client.dart';
 import '../core/router/app_router.dart';
 import '../core/theme/app_theme.dart';
 import '../features/auth/state/auth_controller.dart';
@@ -19,10 +20,12 @@ class RiderApp extends StatefulWidget {
     super.key,
     required this.auth,
     required this.serverConfig,
+    required this.apiClient,
   });
 
   final AuthController auth;
   final ServerConfig serverConfig;
+  final ApiClient apiClient;
 
   @override
   State<RiderApp> createState() => _RiderAppState();
@@ -37,6 +40,7 @@ class _RiderAppState extends State<RiderApp> {
       providers: [
         ChangeNotifierProvider<AuthController>.value(value: widget.auth),
         ChangeNotifierProvider<ServerConfig>.value(value: widget.serverConfig),
+        Provider<ApiClient>.value(value: widget.apiClient),
       ],
       child: MaterialApp.router(
         title: 'BD QuickMart Rider',

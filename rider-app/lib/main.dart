@@ -33,5 +33,5 @@ Future<void> main() async {
   auth.attach();
   await auth.bootstrap();
 
-  runApp(RiderApp(auth: auth, serverConfig: serverConfig));
+  runApp(RiderApp(auth: auth, serverConfig: serverConfig, apiClient: apiClient));
 }

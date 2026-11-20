@@ -14,6 +14,7 @@ const navItems: NavItem[] = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/orders', label: 'Orders' },
   { to: '/products', label: 'Products' },
+  { to: '/categories', label: 'Categories' },
   { to: '/inventory', label: 'Inventory' },
   { to: '/riders', label: 'Riders' },
   { to: '/analytics', label: 'Analytics' },

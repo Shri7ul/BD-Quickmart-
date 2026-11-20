@@ -1,10 +1,41 @@
 # BD QuickMart — Project Progress
 
-> **Last updated:** 2026-11-15 (production API integration run)
+> **Last updated:** 2026-11-21 (Phase 1 commerce implementation + release APKs)
 > **Branch:** `main`
 > **Method:** completion is measured by **verified functionality**, not code
 > volume. Every claim below is backed by an actual command/HTTP result from
 > this run. `BUILT` ≠ `TESTED` ≠ `DEPLOYED`.
+
+## Phase 1 — full quick-commerce workflow (2026-11-21)
+
+Phase 1 is implemented across all four components and verified locally. It is a
+superset of the Goals 01/02 status described below; the percentages above describe
+the earlier auth/deployment run and were not recalculated for Phase 1.
+
+- **Database:** `V2__commerce_schema.sql` adds categories, products, inventory and
+  stock-adjustment audit, orders/items/status-events, and rider availability, with
+  CHECK constraints, FKs, a UNIQUE idempotency key and a canonical status list.
+- **Backend:** admin catalog/inventory/order APIs, customer catalog/checkout/order
+  tracking, rider availability/assignments/status transitions, and a live admin
+  dashboard. Checkout is atomic (pessimistic stock locks + server-authoritative
+  pricing) and idempotent; lifecycle transitions are validated server-side.
+  `mvn clean verify`: **76 tests, 0 failures/errors, 9 skipped** (skips are the
+  local-PostgreSQL dialect tests).
+- **Admin web:** functional Products, Categories, Inventory, Orders, Riders
+  (approval), Dashboard and Analytics pages against the real APIs. Lint clean;
+  production build succeeds.
+- **Customer app:** product catalog, cart, COD checkout, and order tracking.
+  `flutter analyze` clean; **14 tests passed**.
+- **Rider app:** availability, assignments, pickup → out-for-delivery → delivered /
+  failed workflow, status history and earnings from real orders.
+  `flutter analyze` clean; **16 tests passed**.
+- **APKs:** release builds for both apps, pointed at the live host, packaged as
+  `apps/BDQuickMart-Customer.apk` (49.0 MB) and `apps/BDQuickMart-Rider.apk`
+  (48.1 MB). See `apps/README.md` for build config, hashes and limitations.
+- **Remaining (deployment/physical E2E):** apply the V2 migration to production
+  PostgreSQL, redeploy the Phase 1 backend on Render and redeploy the admin web on
+  Vercel, then run the 23-step end-to-end scenario on physical devices. This cannot
+  be completed from this environment.
 
 ## Overall completion: **83%**
 
@@ -24,8 +55,8 @@ from this repository.
 |---|---|---|---|---|
 | Backend | 20% | 92% | TESTED + DEPLOYED (DB UP) | 18.4% |
 | Supabase migration | 20% | 75% | IMPLEMENTED (live verify BLOCKED) | 15.0% |
-| Customer app | 12% | 95% | TESTED + BUILT (old host — rebuild needed) | 11.4% |
-| Rider app | 12% | 95% | TESTED + BUILT (old host — rebuild needed) | 11.4% |
+| Customer app | 12% | 95% | TESTED + BUILT (live host, APK in `apps/`) | 11.4% |
+| Rider app | 12% | 95% | TESTED + BUILT (live host, APK in `apps/`) | 11.4% |
 | Admin Web | 12% | 92% | BUILT + DEPLOYED (production VITE_ baked) | 11.0% |
 | Deployment | 12% | 72% | IMPLEMENTED + backend DEPLOYED | 8.6% |
 | Testing / E2E | 12% | 70% | PARTIAL (live HTTP/WSS + CORS integration tests) | 8.4% |
@@ -109,15 +140,15 @@ tests **only**; it is explicitly **NOT** claimed as verified on live PG.
 
 - `flutter analyze` → **No issues found**; `flutter test` → **14 passed**;
   `flutter build apk --release --dart-define-from-file=dart-defines/production.json.example`
-  → **`customer-app/build/app/outputs/flutter-apk/app-release.apk` (47.1 MB)**.
+  → **`apps/BDQuickMart-Customer.apk` (49.0 MB)**.
 - Registration, login, secure token storage, session restoration, silent
   single-flight refresh, logout, error handling, API integration — tested.
-- **Config still points at the old suspended host.**
-  `dart-defines/production.json.example` and the APK both contain
-  `https://bd-quickmart-backend.onrender.com/api/v1` / the matching WSS URL
-  with `IS_DEVELOPMENT=false`. **Both must be updated to the live host and the
-  APK rebuilt** before distribution (out of scope for the admin CORS fix).
-  `10.0.2.2` strings that remain are dead dev-branch literals / hint text.
+- **Config now points at the live host.** Both
+  `dart-defines/production.json.example` files and both rebuilt APKs contain
+  `https://bd-quickmart.onrender.com/api/v1` / the matching WSS URL with
+  `IS_DEVELOPMENT=false`; string scans confirm zero occurrences of the
+  suspended `bd-quickmart-backend.onrender.com` host. `10.0.2.2` strings that
+  remain are dead dev-branch literals / hint text.
 - Application ID **preserved**: `com.bdquickmart.customer_app` (no change to
   `build.gradle.kts`).
 
@@ -128,7 +159,7 @@ tests **only**; it is explicitly **NOT** claimed as verified on live PG.
 
 - `flutter analyze` → clean; `flutter test` → **16 passed**;
   `flutter build apk --release --dart-define-from-file=dart-defines/production.json.example`
-  → **`rider-app/build/app/outputs/flutter-apk/app-release.apk` (47.1 MB)**.
+  → **`apps/BDQuickMart-Rider.apk` (48.1 MB)**.
 - PENDING / approved / rejected behaviour (test: "pending rider gets a pending
   session; approval promotes it"), secure storage, session restore, refresh,
   logout — implemented/tested.
@@ -223,8 +254,9 @@ real-browser Vercel CORS/login E2E after redeploy, device/cellular Flutter E2E.
    `http://localhost:8080`; set it to `https://bd-quickmart.onrender.com`.
 3. **Admin bundle on Vercel is stale.** It still bakes in the suspended
    `bd-quickmart-backend.onrender.com` host; a Vercel redeploy is required.
-4. **Flutter apps point at the suspended host.** Both `dart-defines` examples
-   and both built APKs must be updated and rebuilt (separate scope).
+4. **Flutter apps previously pointed at the suspended host — FIXED.** Both
+   `dart-defines` examples were updated to the live host and both APKs rebuilt
+   into `apps/` (see `apps/README.md`). What remains is physical-device E2E.
 5. **No Docker / no local PostgreSQL.** `PostgresMigrationIntegrationTest`
    (9 tests) skipped; real-PG dialect verification cannot be produced locally.
 6. **No authenticated cloud deployment tools.** The Render/Vercel dashboard

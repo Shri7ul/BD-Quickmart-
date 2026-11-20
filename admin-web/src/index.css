@@ -525,3 +525,159 @@ body {
     padding: 16px;
   }
 }
+
+/* ---------- Phase 1 management UI ---------- */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: end;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.field > span:first-child {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid rgba(26, 60, 139, 0.25);
+  border-color: var(--color-primary);
+}
+
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.field.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding-top: 22px;
+}
+
+.field.checkbox input {
+  width: auto;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.btn--small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.btn--danger {
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+}
+
+.btn--ghost {
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.alert {
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+.alert--error {
+  background: #fdecea;
+  color: #b71c1c;
+  border: 1px solid #f5c6cb;
+}
+
+.link {
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  margin: 16px 0;
+}
+
+.detail-grid h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.detail-grid p {
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+.detail-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+.detail-list li {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.text-warning { color: var(--color-warning); font-weight: 700; }
+.text-danger  { color: var(--color-danger); font-weight: 700; }
+.text-success { color: var(--color-success); font-weight: 700; }

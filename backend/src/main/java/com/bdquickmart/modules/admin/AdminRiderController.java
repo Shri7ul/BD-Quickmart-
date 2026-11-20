@@ -3,6 +3,12 @@ package com.bdquickmart.modules.admin;
 import com.bdquickmart.common.api.ApiResponse;
 import com.bdquickmart.common.api.ApiResponses;
 import com.bdquickmart.modules.auth.AuthService;
+import com.bdquickmart.modules.rider.RiderService;
+import com.bdquickmart.modules.user.AccountStatus;
+import com.bdquickmart.modules.user.UserEntity;
+import com.bdquickmart.modules.user.UserRepository;
+import com.bdquickmart.modules.user.UserRole;
+import com.bdquickmart.modules.admin.dto.RiderEligibilityResponse;
 import com.bdquickmart.modules.user.dto.UserResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,9 +27,34 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminRiderController {
 
     private final AuthService authService;
+    private final UserRepository userRepository;
+    private final RiderService riderService;
 
-    public AdminRiderController(AuthService authService) {
+    public AdminRiderController(AuthService authService, UserRepository userRepository,
+                                RiderService riderService) {
         this.authService = authService;
+        this.userRepository = userRepository;
+        this.riderService = riderService;
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<RiderEligibilityResponse>>> all(HttpServletRequest request) {
+        List<RiderEligibilityResponse> riders = userRepository.findAll().stream()
+                .filter(u -> u.getRole() == UserRole.RIDER)
+                .map(u -> new RiderEligibilityResponse(u.getPublicId(), u.getFullName(), u.getPhone(),
+                        u.getStatus().name(), riderService.isOnline(u.getId())))
+                .toList();
+        return ResponseEntity.ok(ApiResponses.success(riders, request));
+    }
+
+    @GetMapping("/eligible")
+    public ResponseEntity<ApiResponse<List<RiderEligibilityResponse>>> eligible(HttpServletRequest request) {
+        List<RiderEligibilityResponse> riders = riderService.eligibleRiders().stream()
+                .filter(u -> u.getStatus() == AccountStatus.ACTIVE)
+                .map(u -> new RiderEligibilityResponse(u.getPublicId(), u.getFullName(), u.getPhone(),
+                        u.getStatus().name(), riderService.isOnline(u.getId())))
+                .toList();
+        return ResponseEntity.ok(ApiResponses.success(riders, request));
     }
 
     @GetMapping("/pending")

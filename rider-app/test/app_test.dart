@@ -13,17 +13,18 @@ import 'package:rider_app/features/availability/domain/rider_status.dart';
 
 /// Builds a fully in-memory auth graph so widget tests never touch plugin
 /// channels (secure storage / shared_preferences) or the network.
-({AuthController auth, ServerConfig config}) buildTestGraph() {
+({AuthController auth, ServerConfig config, ApiClient apiClient}) buildTestGraph() {
   final ServerConfig config = ServerConfig(InMemoryKeyValueStore());
+  final ApiClient apiClient = ApiClient(serverConfig: config);
   final AuthController auth = AuthController(
     authApi: AuthApi(config),
-    apiClient: ApiClient(serverConfig: config),
+    apiClient: apiClient,
     tokenStorage: InMemoryTokenStorage(),
     allowedRole: 'RIDER',
     pendingAllowed: true,
   );
   auth.attach();
-  return (auth: auth, config: config);
+  return (auth: auth, config: config, apiClient: apiClient);
 }
 
 void main() {
@@ -33,7 +34,11 @@ void main() {
     await graph.auth.bootstrap(); // empty storage -> unauthenticated
 
     await tester.pumpWidget(
-      RiderApp(auth: graph.auth, serverConfig: graph.config),
+      RiderApp(
+        auth: graph.auth,
+        serverConfig: graph.config,
+        apiClient: graph.apiClient,
+      ),
     );
     await tester.pumpAndSettle();
 

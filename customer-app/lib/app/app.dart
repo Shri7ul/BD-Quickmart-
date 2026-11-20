@@ -3,11 +3,13 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../core/network/api_client.dart';
 import '../core/config/server_config.dart';
 import '../core/localization/app_localizations.dart';
 import '../core/router/app_router.dart';
 import '../core/theme/app_theme.dart';
 import '../features/auth/state/auth_controller.dart';
+import '../features/cart/state/cart_controller.dart';
 
 /// Root widget of the BD QuickMart customer application (Goal 02).
 ///
@@ -19,10 +21,14 @@ class CustomerApp extends StatefulWidget {
     super.key,
     required this.auth,
     required this.serverConfig,
+    required this.apiClient,
+    required this.cart,
   });
 
   final AuthController auth;
   final ServerConfig serverConfig;
+  final ApiClient apiClient;
+  final CartController cart;
 
   @override
   State<CustomerApp> createState() => _CustomerAppState();
@@ -37,6 +43,8 @@ class _CustomerAppState extends State<CustomerApp> {
       providers: [
         ChangeNotifierProvider<AuthController>.value(value: widget.auth),
         ChangeNotifierProvider<ServerConfig>.value(value: widget.serverConfig),
+        Provider<ApiClient>.value(value: widget.apiClient),
+        ChangeNotifierProvider<CartController>.value(value: widget.cart),
       ],
       child: MaterialApp.router(
         title: 'BD QuickMart',

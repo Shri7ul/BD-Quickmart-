@@ -81,6 +81,14 @@ GoRouter createAppRouter(AuthController auth) {
       GoRoute(
         path: AppRoutes.delivery,
         builder: (_, __) => const DeliveryScreen(),
+        routes: [
+          GoRoute(
+            path: ':publicId',
+            builder: (_, state) => DeliveryScreen(
+              publicId: state.pathParameters['publicId'],
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: AppRoutes.earnings,

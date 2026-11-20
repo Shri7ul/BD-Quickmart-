@@ -7,8 +7,10 @@ import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/auth/state/auth_controller.dart';
 import '../../features/cart/presentation/cart_screen.dart';
+import '../../features/cart/presentation/checkout_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/orders/presentation/orders_screen.dart';
+import '../../features/products/presentation/product_detail_screen.dart';
 import '../../features/products/presentation/products_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 
@@ -23,6 +25,7 @@ class AppRoutes {
   static const String home = '/home';
   static const String products = '/home/products';
   static const String cart = '/home/cart';
+  static const String checkout = '/home/checkout';
   static const String orders = '/home/orders';
   static const String profile = '/home/profile';
 }
@@ -77,14 +80,34 @@ GoRouter createAppRouter(AuthController auth) {
           GoRoute(
             path: 'products',
             builder: (_, __) => const ProductsScreen(),
+            routes: [
+              GoRoute(
+                path: ':publicId',
+                builder: (_, state) => ProductDetailScreen(
+                  publicId: state.pathParameters['publicId']!,
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: 'cart',
             builder: (_, __) => const CartScreen(),
           ),
           GoRoute(
+            path: 'checkout',
+            builder: (_, __) => const CheckoutScreen(),
+          ),
+          GoRoute(
             path: 'orders',
             builder: (_, __) => const OrdersScreen(),
+            routes: [
+              GoRoute(
+                path: ':publicId',
+                builder: (_, state) => OrderDetailScreen(
+                  publicId: state.pathParameters['publicId']!,
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: 'profile',

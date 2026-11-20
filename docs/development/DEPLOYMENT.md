@@ -231,18 +231,18 @@ flutter build apk --release \
   --dart-define-from-file=dart-defines/production.json.example
 ```
 
-- **Both apps' `dart-defines/production.json.example` files now contain the
-  confirmed production values** (`IS_DEVELOPMENT=false`, the HTTPS API URL and
-  the WSS URL). They are public config, not secrets — no keystore, password or
-  JWT is involved. `AppConfig` reads them at compile time; `ServerConfig`
-  inherits that value as its default (a runtime QA override may still replace
-  it per-device).
-- The release APKs currently in `build/` still contain the OLD, suspended
-  `bd-quickmart-backend.onrender.com` host. Before distributing them, update
-  both `dart-defines/production.json.example` files to
-  `https://bd-quickmart.onrender.com/api/v1` /
-  `wss://bd-quickmart.onrender.com/ws/tracking` and rebuild. The fail-closed
-  `.example.invalid` default is absent from the existing builds.
+- **Both apps' `dart-defines/production.json.example` files contain the confirmed
+  production values** (`IS_DEVELOPMENT=false`, the HTTPS API URL and the WSS URL)
+  pointing at the live host `https://bd-quickmart.onrender.com`. They are public
+  config, not secrets — no keystore, password or JWT is involved. `AppConfig`
+  reads them at compile time; `ServerConfig` inherits that value as its default
+  (a runtime QA override may still replace it per-device).
+- **Release APKs have been rebuilt with those live values** and copied to the
+  repository-root `apps/` directory as `BDQuickMart-Customer.apk` and
+  `BDQuickMart-Rider.apk` (see `apps/README.md`). Both were string-verified to
+  contain the live host and zero occurrences of the suspended
+  `bd-quickmart-backend.onrender.com` host. The fail-closed `.example.invalid`
+  default is absent from these builds.
 - Release Android manifests omit `usesCleartextTraffic` (debug-only), so
   cleartext is correctly blocked.
 - **Release signing**: configure `android/app/build.gradle.kts` `signingConfigs`

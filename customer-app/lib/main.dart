@@ -7,6 +7,7 @@ import 'core/storage/prefs_store.dart';
 import 'core/storage/token_storage.dart';
 import 'features/auth/data/auth_api.dart';
 import 'features/auth/state/auth_controller.dart';
+import 'features/cart/state/cart_controller.dart';
 
 /// Wires the Goal 02 auth graph before the first frame:
 /// settings -> server config -> HTTP clients -> controller -> bootstrap.
@@ -29,5 +30,13 @@ Future<void> main() async {
   auth.attach();
   await auth.bootstrap();
 
-  runApp(CustomerApp(auth: auth, serverConfig: serverConfig));
+  final CartController cart = CartController(prefs);
+  await cart.restore();
+
+  runApp(CustomerApp(
+    auth: auth,
+    serverConfig: serverConfig,
+    apiClient: apiClient,
+    cart: cart,
+  ));
 }

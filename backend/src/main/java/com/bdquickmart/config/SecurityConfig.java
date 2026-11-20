@@ -87,6 +87,11 @@ public class SecurityConfig {
                         // Privileged provisioning (SUPER_ADMIN only).
                         .requestMatchers(HttpMethod.POST, "/api/v1/admin/users/provision")
                         .hasAuthority("PERM_PROVISION_PRIVILEGED")
+                        // Commerce operations: catalog, inventory, orders, dashboard.
+                        // All are operational console functions, never customer-accessible.
+                        .requestMatchers("/api/v1/admin/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN",
+                                "ROLE_STORE_MANAGER", "ROLE_INVENTORY_OPERATOR")
                         .anyRequest().authenticated())
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)

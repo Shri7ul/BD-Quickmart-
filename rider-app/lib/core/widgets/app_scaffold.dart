@@ -10,17 +10,20 @@ class AppScaffold extends StatelessWidget {
     required this.body,
     this.actions,
     this.padded = true,
+    this.bottomNavigationBar,
   });
 
   final String title;
   final Widget body;
   final List<Widget>? actions;
   final bool padded;
+  final Widget? bottomNavigationBar;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(title), actions: actions),
+      bottomNavigationBar: bottomNavigationBar,
       body: padded
           ? Padding(
               padding: const EdgeInsets.all(AppTheme.spacing * 2),
